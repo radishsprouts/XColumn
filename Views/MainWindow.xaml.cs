@@ -112,6 +112,7 @@ namespace XColumn.Views
         private readonly ObservableCollection<ProfileItem> _profileNames = new();
         private CancellationTokenSource? _loadCts;
         private bool _isRestarting = false;
+        private bool _isInitialized = false;
         private WindowSnapBehavior? _snapBehavior;
 
         // WebViewコントロールとViewModelの対応マップ（循環参照を防ぐためView側でのみ保持）
@@ -125,13 +126,11 @@ namespace XColumn.Views
 
         public MainWindow(string? profileName, bool enableDevTools = false, bool disableGpu = false)
         {
-            InitializeComponent();
-
             _startupProfileName = profileName;
             _enableDevTools = enableDevTools;
             _disableGpu = disableGpu;
 
-            // DI コンテナからサービスを取得
+            // DI コンテナからサービスを先に取得（XAML初期化中のイベント発火やバインディングによる null 参照を確実に防止）
             var sp = App.Current.Services;
             _settingsService = sp.GetRequiredService<ISettingsService>();
             _profileService = sp.GetRequiredService<IProfileService>();
@@ -146,6 +145,8 @@ namespace XColumn.Views
 
             ViewModel = sp.GetRequiredService<MainWindowViewModel>();
             DataContext = ViewModel;
+
+            InitializeComponent();
 
             ColumnItemsControl.ItemsSource = ViewModel.Columns;
 
@@ -204,6 +205,8 @@ namespace XColumn.Views
                 {
                     _ = CheckForUpdatesSilentlyAsync();
                 }
+
+                _isInitialized = true;
             }
             catch (Exception ex)
             {
@@ -499,6 +502,7 @@ namespace XColumn.Views
 
         private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (!_isInitialized || _currentSettings == null) return;
             if (ProfileComboBox.SelectedItem is ProfileItem item && item.Name != _activeProfileName)
             {
                 SwitchProfile(item.Name);
@@ -668,6 +672,7 @@ namespace XColumn.Views
 
         private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
+            if (!_isInitialized || _currentSettings == null || _audioService == null) return;
             _currentSettings.AppVolume = e.NewValue / 100.0;
             _audioService.SetVolume(_currentSettings.AppVolume, GetActiveWebViewProcessIds());
         }
