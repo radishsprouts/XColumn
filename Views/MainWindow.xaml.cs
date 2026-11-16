@@ -357,6 +357,7 @@ namespace XColumn.Views
             ViewModel.ShowColumnUrl = s.ShowColumnUrl;
             ViewModel.StopTimerWhenActive = s.StopTimerWhenActive;
             ViewModel.AppVolume = (int)Math.Round(s.AppVolume * 100);
+            _audioService.SetVolume(s.AppVolume, GetActiveWebViewProcessIds());
             ViewModel.CurrentTheme = s.AppTheme ?? "System";
 
             if (!string.IsNullOrEmpty(s.AppFontFamily))
@@ -393,6 +394,7 @@ namespace XColumn.Views
                 {
                     if (webView.CoreWebView2 != null)
                     {
+                        webView.CoreWebView2.WebResourceResponseReceived -= CoreWebView2_WebResourceResponseReceived;
                         webView.CoreWebView2.Stop();
                         webView.CoreWebView2.Navigate("about:blank");
                     }
@@ -413,6 +415,34 @@ namespace XColumn.Views
                 DisposeColumnView(kvp.Key, kvp.Value);
             }
             _columnWebViewMap.Clear();
+        }
+
+        /// <summary>
+        /// 現在稼働中の全 WebView2（各カラム＋フォーカスビュー）のブラウザプロセスID（PID）を安全に収集します（バグ#1対策）。
+        /// </summary>
+        private IEnumerable<int> GetActiveWebViewProcessIds()
+        {
+            var pids = new HashSet<int>();
+            foreach (var wv in _columnWebViewMap.Values)
+            {
+                if (wv?.CoreWebView2 != null)
+                {
+                    try
+                    {
+                        pids.Add((int)wv.CoreWebView2.BrowserProcessId);
+                    }
+                    catch { }
+                }
+            }
+            if (FocusWebView?.CoreWebView2 != null)
+            {
+                try
+                {
+                    pids.Add((int)FocusWebView.CoreWebView2.BrowserProcessId);
+                }
+                catch { }
+            }
+            return pids;
         }
 
         #endregion
@@ -639,7 +669,7 @@ namespace XColumn.Views
         private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             _currentSettings.AppVolume = e.NewValue / 100.0;
-            _audioService.SetVolume(_currentSettings.AppVolume, Array.Empty<int>());
+            _audioService.SetVolume(_currentSettings.AppVolume, GetActiveWebViewProcessIds());
         }
 
         #endregion
