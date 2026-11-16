@@ -146,6 +146,26 @@ namespace XColumn.Views
             ViewModel = sp.GetRequiredService<MainWindowViewModel>();
             DataContext = ViewModel;
 
+            // 起動プロファイル決定（コンストラクタ時点で早期確定させ、あらゆるUIイベント・バインディングで一貫性を保証）
+            var startupConfig = _settingsService.LoadAppConfig();
+            if (!string.IsNullOrEmpty(_startupProfileName))
+            {
+                _activeProfileName = _startupProfileName;
+            }
+            else if (!string.IsNullOrEmpty(startupConfig.StartupProfile))
+            {
+                _activeProfileName = startupConfig.StartupProfile;
+            }
+            else if (!string.IsNullOrEmpty(startupConfig.ActiveProfile))
+            {
+                _activeProfileName = startupConfig.ActiveProfile;
+            }
+            else
+            {
+                _activeProfileName = "default";
+            }
+            ViewModel.ActiveProfile = _activeProfileName;
+
             InitializeComponent();
 
             ColumnItemsControl.ItemsSource = ViewModel.Columns;
@@ -176,8 +196,7 @@ namespace XColumn.Views
             {
                 _loadCts = new CancellationTokenSource();
 
-                // 起動プロファイル決定
-                _activeProfileName = !string.IsNullOrEmpty(_startupProfileName) ? _startupProfileName : "default";
+                // 起動プロファイル確認（コンストラクタで解決済み）
                 ViewModel.ActiveProfile = _activeProfileName;
 
                 // プロファイル一覧初期化
@@ -516,6 +535,11 @@ namespace XColumn.Views
             ViewModel.SaveColumnsToSettings(_currentSettings);
             _settingsService.SaveSettings(_activeProfileName, _currentSettings);
 
+            // app_config.json の ActiveProfile を確実に更新
+            var config = _settingsService.LoadAppConfig();
+            config.ActiveProfile = newProfileName;
+            _settingsService.SaveAppConfig(config);
+
             string exe = Environment.ProcessPath ?? "";
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
@@ -527,6 +551,21 @@ namespace XColumn.Views
             Application.Current.Shutdown();
         }
 
+        private static string? GetTargetProfileName(object sender)
+        {
+            if (sender is FrameworkElement item && item.Tag is string name) return name;
+            return null;
+        }
+
+        private void SwitchProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string? target = GetTargetProfileName(sender);
+            if (!string.IsNullOrEmpty(target) && target != _activeProfileName)
+            {
+                SwitchProfile(target);
+            }
+        }
+
         private void AddProfile_Click(object sender, RoutedEventArgs e)
         {
             var inputDlg = new InputWindow(R.Title_NewProfile, R.Prompt_NewProfile)
@@ -536,6 +575,8 @@ namespace XColumn.Views
             if (inputDlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(inputDlg.InputText))
             {
                 string name = inputDlg.InputText.Trim();
+                if (!IsValidProfileName(name)) return;
+
                 try
                 {
                     var config = _settingsService.LoadAppConfig();
@@ -560,6 +601,210 @@ namespace XColumn.Views
                     _dialogService.ShowMessage(ex.Message, R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        private void RenameProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string? targetProfile = GetTargetProfileName(sender);
+            if (string.IsNullOrEmpty(targetProfile)) return;
+
+            if (targetProfile == _activeProfileName)
+            {
+                CollectWindowBounds(_currentSettings);
+                ViewModel.SaveColumnsToSettings(_currentSettings);
+                _settingsService.SaveSettings(_activeProfileName, _currentSettings);
+            }
+
+            var inputDlg = new InputWindow(R.Title_RenameProfile, R.Prompt_RenameProfile, targetProfile)
+            {
+                Owner = this
+            };
+
+            if (inputDlg.ShowDialog() != true) return;
+
+            string newName = inputDlg.InputText?.Trim() ?? "";
+            if (string.IsNullOrEmpty(newName) || newName == targetProfile) return;
+            if (!IsValidProfileName(newName)) return;
+
+            try
+            {
+                var config = _settingsService.LoadAppConfig();
+                if (config.ProfileNames.Contains(newName))
+                {
+                    _dialogService.ShowMessage(string.Format(R.Msg_Err_ProfileExists, newName), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                _profileService.RenameProfile(targetProfile, newName);
+
+                int idx = config.ProfileNames.IndexOf(targetProfile);
+                if (idx >= 0) config.ProfileNames[idx] = newName;
+
+                if (targetProfile == _activeProfileName)
+                {
+                    _activeProfileName = newName;
+                    config.ActiveProfile = newName;
+                    ViewModel.ActiveProfile = newName;
+                }
+
+                _settingsService.SaveAppConfig(config);
+                InitializeProfilesUI();
+
+                _dialogService.ShowMessage(string.Format(R.Msg_ProfileRenamed, targetProfile, newName), R.Title_Complete);
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowMessage(string.Format(R.Msg_Err_RenameFailed, ex.Message), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void DuplicateProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string? targetProfile = GetTargetProfileName(sender);
+            if (string.IsNullOrEmpty(targetProfile)) return;
+
+            var inputWin = new InputWindow(R.Title_DuplicateProfile, R.Prompt_NewProfile, $"Copy of {targetProfile}")
+            {
+                Owner = this
+            };
+
+            if (inputWin.ShowDialog() != true) return;
+
+            string newName = inputWin.InputText?.Trim() ?? "";
+            if (!IsValidProfileName(newName)) return;
+
+            try
+            {
+                var config = _settingsService.LoadAppConfig();
+                if (config.ProfileNames.Contains(newName))
+                {
+                    _dialogService.ShowMessage(string.Format(R.Msg_Err_ProfileExists, newName), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                bool isActiveProfile = (targetProfile == _activeProfileName);
+
+                if (isActiveProfile)
+                {
+                    CollectWindowBounds(_currentSettings);
+                    ViewModel.SaveColumnsToSettings(_currentSettings);
+                    _settingsService.SaveSettings(_activeProfileName, _currentSettings);
+                }
+
+                _profileService.DuplicateProfileSettings(targetProfile, newName);
+
+                config.ProfileNames.Add(newName);
+                _settingsService.SaveAppConfig(config);
+                InitializeProfilesUI();
+
+                if (isActiveProfile)
+                {
+                    // アクティブプロファイルはWebViewがデータフォルダをロックしているため、
+                    // その場でのコピーは失敗しやすい。再起動前(App起動時)にコピーを実行するよう予約する。
+                    string msgConfirm = string.Format(R.Msg_ConfirmCloneActiveProfile, targetProfile);
+
+                    if (_dialogService.ShowMessage(msgConfirm, R.Title_RestartConfirm, MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                    {
+                        // 起動時に処理されるコピー予約ファイルを書き出す
+                        _profileService.SchedulePendingClone(targetProfile, newName);
+
+                        SwitchProfile(newName);
+                    }
+                }
+                else
+                {
+                    // 非アクティブプロファイルはロックされていないため、その場でコピー可能
+                    _profileService.CopyBrowserData(targetProfile, newName);
+
+                    string msg = string.Format(R.Msg_ProfileCreated, newName);
+                    if (_dialogService.ShowMessage(msg, R.Title_Complete, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                    {
+                        SwitchProfile(newName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowMessage(string.Format(R.Msg_Err_ProfileCloneFailed, ex.Message), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void DeleteProfile_Click(object sender, RoutedEventArgs e)
+        {
+            string? targetProfile = GetTargetProfileName(sender);
+            if (string.IsNullOrEmpty(targetProfile)) return;
+
+            if (targetProfile == _activeProfileName)
+            {
+                string msg = string.Format(R.Msg_Err_CannotDeleteActive, targetProfile);
+                _dialogService.ShowMessage(msg, R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string confirmMsg = string.Format(R.Msg_ConfirmDeleteProfile, targetProfile);
+            if (_dialogService.ShowMessage(confirmMsg, R.Title_ConfirmDelete, MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                _profileService.DeleteProfile(targetProfile);
+
+                var config = _settingsService.LoadAppConfig();
+                config.ProfileNames.Remove(targetProfile);
+                _settingsService.SaveAppConfig(config);
+                InitializeProfilesUI();
+
+                string doneMsg = string.Format(R.Msg_ProfileDeleted, targetProfile);
+                _dialogService.ShowMessage(doneMsg, R.Title_Complete);
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowMessage(string.Format(R.Msg_Err_DeleteFailed, ex.Message), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LaunchNewWindow_Click(object sender, RoutedEventArgs e)
+        {
+            string? targetProfile = GetTargetProfileName(sender);
+            if (string.IsNullOrEmpty(targetProfile)) return;
+
+            try
+            {
+                string exe = Environment.ProcessPath ?? "";
+                var processInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exe,
+                    Arguments = $"--profile \"{targetProfile}\"",
+                    UseShellExecute = true
+                };
+                System.Diagnostics.Process.Start(processInfo);
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowMessage(string.Format(R.Msg_Err_LaunchFailed, ex.Message), R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private bool IsValidProfileName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            if (name.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+            {
+                _dialogService.ShowMessage(R.Msg_Err_ProfileNameInvalid, R.Title_Error);
+                return false;
+            }
+
+            var config = _settingsService.LoadAppConfig();
+            if (config.ProfileNames.Any(p => p.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                _dialogService.ShowMessage(string.Format(R.Msg_Err_ProfileExists, name), R.Title_Error);
+                return false;
+            }
+
+            return true;
         }
 
         #endregion
@@ -797,7 +1042,83 @@ namespace XColumn.Views
 
         private void MenuProfile_SubmenuOpened(object sender, RoutedEventArgs e)
         {
-            // プロファイルメニューの同期
+            if (e.OriginalSource != sender) return;
+
+            // 静的アイテム（[0]新規作成, [1]セパレータ）以外をクリア
+            while (MenuProfile.Items.Count > 2)
+            {
+                MenuProfile.Items.RemoveAt(2);
+            }
+
+            var config = _settingsService.LoadAppConfig();
+            foreach (var profileName in config.ProfileNames)
+            {
+                bool isActive = profileName == _activeProfileName;
+                var parentItem = new MenuItem
+                {
+                    Header = profileName
+                };
+
+                if (isActive)
+                {
+                    parentItem.FontWeight = FontWeights.Bold;
+                }
+
+                // 1. 切り替え
+                var switchItem = new MenuItem
+                {
+                    Header = R.Menu_Profile_Switch,
+                    Tag = profileName,
+                    IsEnabled = !isActive
+                };
+                switchItem.Click += SwitchProfile_Click;
+                parentItem.Items.Add(switchItem);
+
+                parentItem.Items.Add(new Separator());
+
+                // 2. 名前変更
+                var renameItem = new MenuItem
+                {
+                    Header = R.Menu_Profile_Rename,
+                    Tag = profileName,
+                    IsEnabled = !isActive
+                };
+                renameItem.Click += RenameProfile_Click;
+                parentItem.Items.Add(renameItem);
+
+                // 3. 複製
+                var dupItem = new MenuItem
+                {
+                    Header = R.Menu_Profile_Duplicate,
+                    Tag = profileName
+                };
+                dupItem.Click += DuplicateProfile_Click;
+                parentItem.Items.Add(dupItem);
+
+                // 4. 別窓で起動
+                var launchItem = new MenuItem
+                {
+                    Header = R.Menu_Profile_LaunchNew,
+                    Tag = profileName
+                };
+                launchItem.Click += LaunchNewWindow_Click;
+                parentItem.Items.Add(launchItem);
+
+                parentItem.Items.Add(new Separator());
+
+                // 5. 削除
+                var deleteItem = new MenuItem
+                {
+                    Header = R.Menu_Profile_Delete,
+                    Tag = profileName,
+                    Foreground = System.Windows.Media.Brushes.Red,
+                    IsEnabled = !isActive
+                };
+                deleteItem.Click += DeleteProfile_Click;
+                parentItem.Items.Add(deleteItem);
+
+                MenuProfile.Items.Add(parentItem);
+            }
         }
 
         private void MenuOtherProfileTimeline_SubmenuOpened(object sender, RoutedEventArgs e)

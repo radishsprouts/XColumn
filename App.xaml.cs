@@ -31,7 +31,7 @@ namespace XColumn
         /// <summary>
         /// アプリ全体のDIコンテナ。
         /// </summary>
-        public IServiceProvider Services { get; private set; } = null!;
+        public IServiceProvider Services { get; set; } = null!;
 
         private readonly string _userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
 
