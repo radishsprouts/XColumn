@@ -69,7 +69,46 @@ namespace XColumn.Helpers
         }
 
         /// <summary>
-        /// 選択した拡張機能をアプリの管理下（実行フォルダ配下の Extensions/拡張機能名）にコピーします。
+        /// 拡張機能の保存先フォルダ（%AppData%\XColumn\Extensions）を取得します。
+        /// </summary>
+        public static string GetExtensionsFolder()
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string folder = Path.Combine(appData, "XColumn", "Extensions");
+            Directory.CreateDirectory(folder);
+            return folder;
+        }
+
+        /// <summary>
+        /// 過去バージョンで実行フォルダ直下の Extensions に保存されていた拡張機能を、
+        /// %AppData%\XColumn\Extensions へ自動的に移行・コピーします（初回起動時に実行）。
+        /// </summary>
+        public static void MigrateLegacyExtensionsFolder()
+        {
+            try
+            {
+                string legacyDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Extensions");
+                if (!Directory.Exists(legacyDir)) return;
+
+                string destDir = GetExtensionsFolder();
+                foreach (string subDir in Directory.GetDirectories(legacyDir))
+                {
+                    string target = Path.Combine(destDir, Path.GetFileName(subDir));
+                    if (!Directory.Exists(target))
+                    {
+                        CopyDirectory(subDir, target);
+                        Logger.Log($"[ChromeExtensionImporter] Migrated legacy extension: {Path.GetFileName(subDir)}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[ChromeExtensionImporter] Migration error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 選択した拡張機能をアプリの管理下（%AppData%\XColumn\Extensions\拡張機能名）にコピーします。
         /// </summary>
         /// <param name="sourcePath">コピー元（Chrome側のバージョンフォルダ）。</param>
         /// <param name="extensionName">拡張機能名（コピー先フォルダ名に使用。不正文字は除去）。</param>
@@ -78,9 +117,7 @@ namespace XColumn.Helpers
         {
             try
             {
-                // アプリの実行フォルダ/Extensions/拡張機能名
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string destRoot = Path.Combine(appDir, "Extensions");
+                string destRoot = GetExtensionsFolder();
 
                 // ファイル名（フォルダ名）に使えない文字をアンダースコアへ置換
                 string safeName = string.Join("_", extensionName.Split(Path.GetInvalidFileNameChars()));

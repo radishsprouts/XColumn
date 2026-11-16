@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Text.Json;
+using XColumn.Helpers;
 using XColumn.Models;
 
 namespace XColumn.Services
@@ -80,11 +81,71 @@ namespace XColumn.Services
         {
             // 設定ファイル(.dat)の削除
             string settingsPath = _settingsService.GetProfilePath(profileName);
-            if (File.Exists(settingsPath)) File.Delete(settingsPath);
+            if (File.Exists(settingsPath))
+            {
+                try { File.Delete(settingsPath); } catch (Exception ex) { Logger.Log($"Delete settings failed: {ex.Message}"); }
+            }
 
-            // ブラウザデータフォルダの削除
+            // ブラウザデータフォルダの削除（ロック時は次回起動時削除に予約）
             string dataPath = GetBrowserDataPath(profileName);
-            if (Directory.Exists(dataPath)) Directory.Delete(dataPath, true);
+            if (Directory.Exists(dataPath))
+            {
+                try
+                {
+                    Directory.Delete(dataPath, true);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Browser data in use, scheduling pending delete: {ex.Message}");
+                    SchedulePendingDelete(dataPath);
+                }
+            }
+        }
+
+        private void SchedulePendingDelete(string path)
+        {
+            try
+            {
+                string pendingFile = Path.Combine(_settingsService.UserDataFolder, "pending_delete.json");
+                var list = new List<string>();
+                if (File.Exists(pendingFile))
+                {
+                    list = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(pendingFile)) ?? new();
+                }
+                if (!list.Contains(path)) list.Add(path);
+                File.WriteAllText(pendingFile, JsonSerializer.Serialize(list));
+            }
+            catch { }
+        }
+
+        /// <inheritdoc/>
+        public void ProcessPendingDelete()
+        {
+            string pendingFile = Path.Combine(_settingsService.UserDataFolder, "pending_delete.json");
+            if (!File.Exists(pendingFile)) return;
+
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(pendingFile));
+                if (list != null)
+                {
+                    var remaining = new List<string>();
+                    foreach (var path in list)
+                    {
+                        if (Directory.Exists(path))
+                        {
+                            try { Directory.Delete(path, true); }
+                            catch { remaining.Add(path); }
+                        }
+                    }
+
+                    if (remaining.Count > 0)
+                        File.WriteAllText(pendingFile, JsonSerializer.Serialize(remaining));
+                    else
+                        File.Delete(pendingFile);
+                }
+            }
+            catch { }
         }
 
         /// <inheritdoc/>

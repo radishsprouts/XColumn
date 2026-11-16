@@ -54,5 +54,11 @@
         /// 実行後は指示書を削除します。アプリ起動直後（WebView未起動時）に呼び出します。
         /// </summary>
         void ProcessPendingClone();
+
+        /// <summary>
+        /// pending_delete.json が存在する場合に、予約されたプロファイルフォルダの削除を実行します。
+        /// アプリ起動直後（WebView未起動時）に呼び出します。
+        /// </summary>
+        void ProcessPendingDelete();
     }
 }

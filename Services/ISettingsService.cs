@@ -57,5 +57,13 @@ namespace XColumn.Services
         /// <param name="profileName">プロファイル名。</param>
         /// <param name="settings">保存する設定。</param>
         void SaveSettings(string profileName, AppSettings settings);
+
+        /// <summary>
+        /// 指定プロファイルのブラウザ一時キャッシュを削除してディスク容量を解放します。
+        /// ログイン情報やCookieは保持されます。
+        /// </summary>
+        /// <param name="profileName">プロファイル名。</param>
+        /// <returns>削除に成功したかどうか。</returns>
+        bool ClearBrowserCache(string profileName);
     }
 }

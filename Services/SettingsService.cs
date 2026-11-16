@@ -99,12 +99,31 @@ namespace XColumn.Services
             {
                 byte[] encrypted = File.ReadAllBytes(path);
                 byte[] jsonBytes = ProtectedData.Unprotect(encrypted, _entropy, DataProtectionScope.CurrentUser);
-                return JsonSerializer.Deserialize<AppSettings>(Encoding.UTF8.GetString(jsonBytes)) ?? new AppSettings();
+                var settings = JsonSerializer.Deserialize<AppSettings>(Encoding.UTF8.GetString(jsonBytes)) ?? new AppSettings();
+
+                // マイグレーション処理（古いバージョンの設定を補正）
+                MigrateSettingsIfNeeded(settings);
+
+                return settings;
             }
             catch
             {
                 // 復号またはデシリアライズに失敗した場合はデフォルト設定を返す
                 return new AppSettings();
+            }
+        }
+
+        private static void MigrateSettingsIfNeeded(AppSettings settings)
+        {
+            if (settings.ConfigVersion < 1)
+            {
+                settings.ConfigVersion = 1;
+            }
+            // 画面外座標の安全ガード（バグ#2補正）
+            if (settings.WindowLeft < -10000 || settings.WindowTop < -10000)
+            {
+                settings.WindowLeft = 100;
+                settings.WindowTop = 100;
             }
         }
 
@@ -120,6 +139,35 @@ namespace XColumn.Services
             catch (Exception ex)
             {
                 Logger.Log($"Save failed: {ex.Message}");
+            }
+        }
+
+        /// <inheritdoc/>
+        public bool ClearBrowserCache(string profileName)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(profileName)) profileName = "Default";
+                string browserDataFolder = Path.Combine(UserDataFolder, "BrowserData", profileName, "EBWebView", "Default");
+                if (!Directory.Exists(browserDataFolder)) return true;
+
+                // キャッシュ系ディレクトリを特定して削除
+                string[] cacheDirs = { "Cache", "Code Cache", "GPUCache", "DawnCache", "Service Worker" };
+                foreach (var dirName in cacheDirs)
+                {
+                    string target = Path.Combine(browserDataFolder, dirName);
+                    if (Directory.Exists(target))
+                    {
+                        try { Directory.Delete(target, true); } catch { /* ロック中のファイルはスキップ */ }
+                    }
+                }
+                Logger.Log($"[SettingsService] Browser cache cleared for profile: {profileName}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[SettingsService] ClearBrowserCache failed: {ex.Message}");
+                return false;
             }
         }
     }

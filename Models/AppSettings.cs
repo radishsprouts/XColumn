@@ -8,6 +8,11 @@ namespace XColumn.Models
     public class AppSettings
     {
         /// <summary>
+        /// 設定スキーマのバージョン番号（マイグレーション用）。
+        /// </summary>
+        public int ConfigVersion { get; set; } = 1;
+
+        /// <summary>
         /// 表示するカラム（WebView）のリスト。
         /// </summary>
         public List<ColumnData> Columns { get; set; } = new List<ColumnData>();
