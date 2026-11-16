@@ -67,44 +67,51 @@ namespace XColumn.Views
         {
             if (FocusWebView.CoreWebView2 != null) return;
 
-            var env = await _environmentService.GetOrCreateEnvironmentAsync(_activeProfileName, _currentSettings.DisablePopupBlocking);
-            if (env != null)
+            try
             {
-                await FocusWebView.EnsureCoreWebView2Async(env);
-
-                if (FocusWebView.CoreWebView2 != null)
+                var env = await _environmentService.GetOrCreateEnvironmentAsync(_activeProfileName, _currentSettings.DisablePopupBlocking);
+                if (env != null)
                 {
-                    FocusWebView.CoreWebView2.Settings.IsScriptEnabled = true;
-                    FocusWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-                    FocusWebView.CoreWebView2.Settings.AreDevToolsEnabled = _enableDevTools;
+                    await FocusWebView.EnsureCoreWebView2Async(env);
 
-                    FocusWebView.CoreWebView2.ContextMenuRequested += CoreWebView2_ContextMenuRequested;
-
-                    FocusWebView.CoreWebView2.NavigationStarting += (s, e) =>
+                    if (FocusWebView.CoreWebView2 != null)
                     {
-                        string url = e.Uri;
-                        if (url.StartsWith("chrome-extension://")) return;
+                        FocusWebView.CoreWebView2.Settings.IsScriptEnabled = true;
+                        FocusWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
+                        FocusWebView.CoreWebView2.Settings.AreDevToolsEnabled = _enableDevTools;
 
-                        if (!IsAllowedDomain(url, focus: true))
-                        {
-                            e.Cancel = true;
-                            OpenExternalLinkByMode(url);
-                        }
-                    };
+                        FocusWebView.CoreWebView2.ContextMenuRequested += CoreWebView2_ContextMenuRequested;
 
-                    FocusWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
-                    {
-                        if (e.IsSuccess && FocusWebView.CoreWebView2 != null)
+                        FocusWebView.CoreWebView2.NavigationStarting += (s, e) =>
                         {
-                            string src = FocusWebView.CoreWebView2.Source;
-                            await _scriptService.ApplyCustomCssAsync(FocusWebView.CoreWebView2, src, _focusedColumnData, _currentSettings);
-                            await _scriptService.ApplyYouTubeClickScriptAsync(FocusWebView.CoreWebView2);
-                            await _scriptService.ApplyTrendingClickScriptAsync(FocusWebView.CoreWebView2);
-                            await _scriptService.ApplyMediaExpandAsync(FocusWebView.CoreWebView2);
-                            await _scriptService.ApplyAbsoluteTimeAsync(FocusWebView.CoreWebView2, _currentSettings.ShowAbsoluteTime);
-                        }
-                    };
+                            string url = e.Uri;
+                            if (url.StartsWith("chrome-extension://")) return;
+
+                            if (!IsAllowedDomain(url, focus: true))
+                            {
+                                e.Cancel = true;
+                                OpenExternalLinkByMode(url);
+                            }
+                        };
+
+                        FocusWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
+                        {
+                            if (e.IsSuccess && FocusWebView.CoreWebView2 != null)
+                            {
+                                string src = FocusWebView.CoreWebView2.Source;
+                                await _scriptService.ApplyCustomCssAsync(FocusWebView.CoreWebView2, src, _focusedColumnData, _currentSettings);
+                                await _scriptService.ApplyYouTubeClickScriptAsync(FocusWebView.CoreWebView2);
+                                await _scriptService.ApplyTrendingClickScriptAsync(FocusWebView.CoreWebView2);
+                                await _scriptService.ApplyMediaExpandAsync(FocusWebView.CoreWebView2);
+                                await _scriptService.ApplyAbsoluteTimeAsync(FocusWebView.CoreWebView2, _currentSettings.ShowAbsoluteTime);
+                            }
+                        };
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[MainWindow] InitializeFocusWebView error: {ex.Message}");
             }
         }
 
@@ -116,12 +123,19 @@ namespace XColumn.Views
         {
             if (sender is WebView2 webView && webView.CoreWebView2 == null && webView.DataContext is ColumnViewModel col)
             {
-                string targetProfile = string.IsNullOrEmpty(col.ProfileName) ? _activeProfileName : col.ProfileName;
-                var env = await _environmentService.GetOrCreateEnvironmentAsync(targetProfile, _currentSettings.DisablePopupBlocking);
-                if (env != null)
+                try
                 {
-                    webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
-                    await webView.EnsureCoreWebView2Async(env);
+                    string targetProfile = string.IsNullOrEmpty(col.ProfileName) ? _activeProfileName : col.ProfileName;
+                    var env = await _environmentService.GetOrCreateEnvironmentAsync(targetProfile, _currentSettings.DisablePopupBlocking);
+                    if (env != null)
+                    {
+                        webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
+                        await webView.EnsureCoreWebView2Async(env);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"[MainWindow] WebView_Loaded error: {ex.Message}");
                 }
             }
         }
@@ -185,12 +199,113 @@ namespace XColumn.Views
 
             webView.ZoomFactor = col.ZoomFactor;
 
-            // ColumnViewModel からの委譲イベント・要求を購読
-            col.GoBackRequested += (c) =>
+            // WebMessage 受信ハンドラ（ESCキー、入力状態、外部リンク、横スクロール等）
+            webView.CoreWebView2.WebMessageReceived += (s, e) =>
             {
-                if (webView.CoreWebView2 != null && webView.CoreWebView2.CanGoBack)
+                try
+                {
+                    string jsonString = e.TryGetWebMessageAsString();
+                    if (string.IsNullOrEmpty(jsonString)) return;
+                    var json = JsonNode.Parse(jsonString);
+                    string? type = json?["type"]?.GetValue<string>();
+
+                    if (type == "inputState")
+                    {
+                        bool isActive = json?["val"]?.GetValue<bool>() ?? false;
+                        col.IsInputActive = isActive;
+                        if (isActive)
+                        {
+                            col.LastInputTime = DateTime.Now;
+                        }
+                    }
+                    else if (type == "keyInput")
+                    {
+                        string? key = json?["key"]?.GetValue<string>();
+                        if (key == "Escape")
+                        {
+                            if (_isFocusMode)
+                            {
+                                ExitFocusMode();
+                            }
+                            else
+                            {
+                                col.GoBack();
+                            }
+                        }
+                    }
+                    else if (type == "openNewColumn")
+                    {
+                        string? url = json?["url"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(url) && IsAllowedDomain(url))
+                        {
+                            Dispatcher.InvokeAsync(() => AddNewColumn(url));
+                        }
+                    }
+                    else if (type == "openExternalLink")
+                    {
+                        string? url = json?["url"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(url) && !IsAllowedDomain(url) && !IsAllowedDomain(url, true))
+                        {
+                            Dispatcher.InvokeAsync(() => OpenExternalLinkByMode(url));
+                        }
+                    }
+                    else if (type == "scrollState")
+                    {
+                        bool isTop = json?["isTop"]?.GetValue<bool>() ?? true;
+                        col.IsAtTop = isTop;
+                    }
+                    else if (type == "horizontalScroll")
+                    {
+                        double delta = json?["delta"]?.GetValue<double>() ?? 0;
+                        PerformHorizontalScroll(delta);
+                    }
+                }
+                catch { }
+            };
+
+            // ColumnViewModel からの委譲イベント・要求を購読
+            col.GoBackRequested += async (c) =>
+            {
+                if (webView.CoreWebView2 == null) return;
+
+                string currentSrc = webView.CoreWebView2.Source ?? "";
+                bool isDifferentFromBase = !string.IsNullOrEmpty(c.Url) &&
+                    !string.Equals(currentSrc.TrimEnd('/'), c.Url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+                if (webView.CoreWebView2.CanGoBack)
                 {
                     webView.CoreWebView2.GoBack();
+                }
+                else if (isDifferentFromBase)
+                {
+                    // 履歴スタックが切れている場合は SPA の history.back() を試行
+                    try
+                    {
+                        await webView.CoreWebView2.ExecuteScriptAsync("window.history.back();");
+                    }
+                    catch { }
+
+                    // 一定時間待ってURLが基点に戻らなければ基点URLへ強制復帰
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(250);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (webView.CoreWebView2 != null)
+                            {
+                                string afterSrc = webView.CoreWebView2.Source ?? "";
+                                if (!string.IsNullOrEmpty(c.Url) &&
+                                    !string.Equals(afterSrc.TrimEnd('/'), c.Url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    webView.CoreWebView2.Navigate(c.Url);
+                                }
+                            }
+                        });
+                    });
+                }
+                else if (!string.IsNullOrEmpty(c.Url))
+                {
+                    webView.CoreWebView2.Navigate(c.Url);
                 }
             };
 
@@ -292,9 +407,28 @@ namespace XColumn.Views
         {
             if (webView.CoreWebView2 == null) return;
 
-            // 非Xドメインは強制リロード
             string currentUrl = webView.CoreWebView2.Source;
             if (string.IsNullOrEmpty(currentUrl)) currentUrl = col.Url;
+
+            // 表示中のURLが基点URLと異なっており、かつ手動更新または強制リロードの場合、
+            // 以前の仕様どおり基点URLへの復帰を最優先で行う
+            bool isDifferentFromBase = !string.IsNullOrEmpty(col.Url) &&
+                !string.Equals(currentUrl.TrimEnd('/'), col.Url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+            if (isDifferentFromBase && (isUserInitiated || forceReload))
+            {
+                if (webView.CoreWebView2.CanGoBack)
+                {
+                    webView.CoreWebView2.GoBack();
+                }
+                else
+                {
+                    webView.CoreWebView2.Navigate(col.Url);
+                }
+                return;
+            }
+
+            // 非Xドメインは強制リロード
             if (!IsXDomain(currentUrl)) forceReload = true;
 
             if (!forceReload)

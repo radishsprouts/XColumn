@@ -706,6 +706,15 @@ namespace XColumn.Views
             }
         }
 
+        public void PerformHorizontalScroll(double delta)
+        {
+            var scrollViewer = ColumnItemsControl.Template?.FindName("MainScrollViewer", ColumnItemsControl) as ScrollViewer;
+            if (scrollViewer != null)
+            {
+                scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset + delta);
+            }
+        }
+
         #endregion
 
         #region UI Event Handlers & Context
