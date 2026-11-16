@@ -34,6 +34,9 @@ namespace XColumn.Views
         /// <summary>現在フォーカスモード（単一ビュー）かどうか。</summary>
         private bool _isFocusMode = false;
 
+        /// <summary>メディア（画像・動画）をクリックしてフォーカスモードに入ったかどうか。</summary>
+        private bool _isMediaFocusIntent = false;
+
         /// <summary>最後にネットワークエラーを検知した時刻（短時間の大量通知を抑止するデバウンス用）。</summary>
         private DateTime _lastDetectedErrorTime = DateTime.MinValue;
 
@@ -81,6 +84,7 @@ namespace XColumn.Views
                         FocusWebView.CoreWebView2.Settings.AreDevToolsEnabled = _enableDevTools;
 
                         FocusWebView.CoreWebView2.ContextMenuRequested += CoreWebView2_ContextMenuRequested;
+                        FocusWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
 
                         FocusWebView.CoreWebView2.NavigationStarting += (s, e) =>
                         {
@@ -102,7 +106,8 @@ namespace XColumn.Views
                                 await _scriptService.ApplyCustomCssAsync(FocusWebView.CoreWebView2, src, _focusedColumnData, _currentSettings);
                                 await _scriptService.ApplyYouTubeClickScriptAsync(FocusWebView.CoreWebView2);
                                 await _scriptService.ApplyTrendingClickScriptAsync(FocusWebView.CoreWebView2);
-                                await _scriptService.ApplyMediaExpandAsync(FocusWebView.CoreWebView2);
+                                await _scriptService.ApplyMediaExpandAsync(FocusWebView.CoreWebView2, _isMediaFocusIntent);
+                                await _scriptService.ApplyKeyDetectionAsync(FocusWebView.CoreWebView2);
                                 await _scriptService.ApplyAbsoluteTimeAsync(FocusWebView.CoreWebView2, _currentSettings.ShowAbsoluteTime);
                             }
                         };
@@ -209,7 +214,43 @@ namespace XColumn.Views
                     var json = JsonNode.Parse(jsonString);
                     string? type = json?["type"]?.GetValue<string>();
 
-                    if (type == "inputState")
+                    if (type == "openFocusMode")
+                    {
+                        string? url = json?["url"]?.GetValue<string>();
+                        bool isVideo = json?["isVideo"]?.GetValue<bool>() ?? false;
+                        if (!string.IsNullOrEmpty(url) && (IsAllowedDomain(url, true) || IsAllowedDomain(url, false)))
+                        {
+                            _isMediaFocusIntent = url.Contains("/photo/") || url.Contains("/video/");
+
+                            // 別プロファイルの場合はモーダルを起動せず、そのままカラム内で遷移させる
+                            if (!string.IsNullOrEmpty(col.ProfileName) && col.ProfileName != _activeProfileName)
+                            {
+                                if (_columnWebViewMap.TryGetValue(col, out var targetWv)) targetWv.CoreWebView2?.Navigate(url);
+                                return;
+                            }
+
+                            _focusedColumnData = col;
+                            Dispatcher.InvokeAsync(() => OpenFocusMode(url, isVideo));
+                        }
+                    }
+                    else if (type == "openPipVideo")
+                    {
+                        string? url = json?["url"]?.GetValue<string>();
+                        if (_currentSettings.AutoPipForVideo && !string.IsNullOrEmpty(url) && IsYouTubeUrl(url))
+                        {
+                            Dispatcher.InvokeAsync(() => OpenFocusMode(url, isVideo: true));
+                        }
+                    }
+                    else if (type == "openFocusVideo")
+                    {
+                        string? url = json?["url"]?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(url) && IsYouTubeUrl(url))
+                        {
+                            _focusedColumnData = col;
+                            Dispatcher.InvokeAsync(() => EnterFocusMode(url));
+                        }
+                    }
+                    else if (type == "inputState")
                     {
                         bool isActive = json?["val"]?.GetValue<bool>() ?? false;
                         col.IsInputActive = isActive;
@@ -411,7 +452,7 @@ namespace XColumn.Views
                     await _scriptService.ApplyCustomCssAsync(webView.CoreWebView2, currentUrl, col, _currentSettings);
                     await _scriptService.ApplyVolumeAsync(webView.CoreWebView2, _currentSettings.AppVolume);
                     await _scriptService.ApplyYouTubeClickScriptAsync(webView.CoreWebView2);
-                    await _scriptService.ApplyMediaExpandAsync(webView.CoreWebView2, _currentSettings.DisableFocusModeOnMediaClick, _currentSettings.DisableFocusModeOnTweetClick);
+                    await _scriptService.ApplyInterceptClickAsync(webView.CoreWebView2, _currentSettings.DisableFocusModeOnMediaClick, _currentSettings.DisableFocusModeOnTweetClick);
                     await _scriptService.ApplyTrendingClickScriptAsync(webView.CoreWebView2);
                     await _scriptService.ApplyScrollSyncAsync(webView.CoreWebView2);
                     await _scriptService.ApplyNgWordsAsync(webView.CoreWebView2, _currentSettings.NgWords);
@@ -594,19 +635,32 @@ namespace XColumn.Views
 
         private async void EnterFocusMode(string url)
         {
-            await InitializeFocusWebView();
-            if (FocusWebView.CoreWebView2 == null) return;
-
             _isFocusMode = true;
             FocusViewGrid.Visibility = Visibility.Visible;
             ColumnItemsControl.Visibility = Visibility.Collapsed;
 
-            FocusWebView.CoreWebView2.Navigate(url);
+            await InitializeFocusWebView();
+            if (FocusWebView.CoreWebView2 != null)
+            {
+                FocusWebView.CoreWebView2.Navigate(url);
+            }
         }
 
         private void ExitFocusMode()
         {
             _isFocusMode = false;
+            _isMediaFocusIntent = false;
+
+            if (FocusWebView?.CoreWebView2 != null)
+            {
+                try
+                {
+                    FocusWebView.CoreWebView2.Stop();
+                    FocusWebView.CoreWebView2.Navigate("about:blank");
+                }
+                catch { }
+            }
+
             FocusViewGrid.Visibility = Visibility.Collapsed;
             ColumnItemsControl.Visibility = Visibility.Visible;
 
@@ -657,6 +711,16 @@ namespace XColumn.Views
             catch { return false; }
         }
 
+        private static bool IsYouTubeUrl(string url)
+        {
+            try
+            {
+                string host = new Uri(url).Host.ToLowerInvariant();
+                return host.EndsWith("youtube.com") || host.EndsWith("youtu.be") || host.EndsWith("youtube-nocookie.com");
+            }
+            catch { return false; }
+        }
+
         #endregion
 
         #region Context Menu & WebMessage
@@ -671,15 +735,40 @@ namespace XColumn.Views
         {
             try
             {
-                string json = e.WebMessageAsJson;
-                var node = JsonNode.Parse(json);
+                string jsonString = e.TryGetWebMessageAsString();
+                if (string.IsNullOrEmpty(jsonString)) jsonString = e.WebMessageAsJson;
+                if (string.IsNullOrEmpty(jsonString)) return;
+
+                var node = JsonNode.Parse(jsonString);
                 if (node == null) return;
 
                 string? type = node["type"]?.GetValue<string>();
-                if (type == "openFocus" && node["url"] != null)
+                if ((type == "openFocusMode" || type == "openFocus") && node["url"] != null)
                 {
                     string focusUrl = node["url"]!.GetValue<string>();
-                    EnterFocusMode(focusUrl);
+                    bool isVideo = node["isVideo"]?.GetValue<bool>() ?? false;
+                    _isMediaFocusIntent = focusUrl.Contains("/photo/") || focusUrl.Contains("/video/");
+
+                    if (sender is CoreWebView2 coreWv)
+                    {
+                        var col = ViewModel.Columns.FirstOrDefault(c => _columnWebViewMap.TryGetValue(c, out var wv) && wv.CoreWebView2 == coreWv);
+                        if (col != null && !string.IsNullOrEmpty(col.ProfileName) && col.ProfileName != _activeProfileName)
+                        {
+                            if (_columnWebViewMap.TryGetValue(col, out var targetWv)) targetWv.CoreWebView2?.Navigate(focusUrl);
+                            return;
+                        }
+                        _focusedColumnData = col;
+                    }
+
+                    Dispatcher.InvokeAsync(() => OpenFocusMode(focusUrl, isVideo));
+                }
+                else if (type == "keyInput")
+                {
+                    string? key = node["key"]?.GetValue<string>();
+                    if (key == "Escape" && _isFocusMode)
+                    {
+                        ExitFocusMode();
+                    }
                 }
             }
             catch { }

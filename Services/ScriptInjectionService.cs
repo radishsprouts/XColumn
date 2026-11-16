@@ -161,7 +161,7 @@ namespace XColumn.Services
             }
         }
 
-        public async Task ApplyMediaExpandAsync(CoreWebView2 webView, bool disableMediaFocus = false, bool disableTweetFocus = false)
+        public async Task ApplyInterceptClickAsync(CoreWebView2 webView, bool disableMediaFocus = false, bool disableTweetFocus = false)
         {
             try
             {
@@ -169,6 +169,20 @@ namespace XColumn.Services
                 string tweetFocusStr = disableTweetFocus ? "true" : "false";
                 await webView.ExecuteScriptAsync($"window.xColumnDisableMediaFocus = {mediaFocusStr}; window.xColumnDisableTweetFocus = {tweetFocusStr};");
                 await webView.ExecuteScriptAsync(ScriptDefinitions.ScriptInterceptClick);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[ScriptInjectionService] ApplyInterceptClick failed: {ex.Message}");
+            }
+        }
+
+        public async Task ApplyMediaExpandAsync(CoreWebView2 webView, bool forceExpand = true)
+        {
+            try
+            {
+                string expandStr = forceExpand ? "true" : "false";
+                await webView.ExecuteScriptAsync($"window.xColumnForceExpand = {expandStr};");
+                await webView.ExecuteScriptAsync(ScriptDefinitions.ScriptMediaExpand);
             }
             catch (Exception ex)
             {

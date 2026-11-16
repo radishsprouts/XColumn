@@ -22,8 +22,11 @@ namespace XColumn.Services
         /// <summary>スクロール同期スクリプトを注入します。</summary>
         Task ApplyScrollSyncAsync(CoreWebView2 webView);
 
-        /// <summary>メディア拡大・クリック制御スクリプトを注入します。</summary>
-        Task ApplyMediaExpandAsync(CoreWebView2 webView, bool disableMediaFocus = false, bool disableTweetFocus = false);
+        /// <summary>クリック横取りスクリプト（メディア・ツイートクリック制御）を注入します。</summary>
+        Task ApplyInterceptClickAsync(CoreWebView2 webView, bool disableMediaFocus = false, bool disableTweetFocus = false);
+
+        /// <summary>フォーカスモードでのメディア自動展開スクリプトを注入します。</summary>
+        Task ApplyMediaExpandAsync(CoreWebView2 webView, bool forceExpand = true);
 
         /// <summary>絶対時刻表示スクリプトを注入します。</summary>
         Task ApplyAbsoluteTimeAsync(CoreWebView2 webView, bool showAbsoluteTime);

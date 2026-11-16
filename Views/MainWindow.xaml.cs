@@ -966,7 +966,22 @@ namespace XColumn.Views
 
         public void RestartApplication() => SwitchProfile(_activeProfileName);
 
-        public void OpenFocusMode(string url) => EnterFocusMode(url);
+        public void OpenFocusMode(string url, bool isVideo = false)
+        {
+            if (url.Contains("/video/"))
+            {
+                isVideo = true;
+            }
+
+            if (_currentSettings.AutoPipForVideo && isVideo)
+            {
+                var pip = new PipWindow(url, _settingsService.UserDataFolder) { Owner = this };
+                pip.Show();
+                return;
+            }
+
+            EnterFocusMode(url);
+        }
 
         private void ColumnHeader_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
