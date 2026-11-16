@@ -308,6 +308,12 @@ namespace XColumn.Models
         public event Action<ColumnData>? GoBackRequested;
 
         /// <summary>
+        /// 「基点URLに戻る」操作を View(WebView) に依頼するイベント。
+        /// View 側で基点URL(Url)への Navigate を実行します。
+        /// </summary>
+        public event Action<ColumnData>? NavigateHomeRequested;
+
+        /// <summary>
         /// 休止状態の切り替えに伴う表示更新を View に依頼するイベント。
         /// 引数 isSuspended が true なら休止HTMLの表示、false なら元URLへの復帰を行います。
         /// </summary>
@@ -342,6 +348,17 @@ namespace XColumn.Models
             // ロック中は戻る操作を無効化
             if (IsLocked) return;
             GoBackRequested?.Invoke(this);
+        }
+
+        /// <summary>
+        /// 「基点URLに戻る」操作。実際のWebView操作は View に委譲します。
+        /// ロック中であっても基点URLへの復帰は許可します。
+        /// </summary>
+        [RelayCommand]
+        private void NavigateHome()
+        {
+            if (IsSuspended) return;
+            NavigateHomeRequested?.Invoke(this);
         }
 
         /// <summary>

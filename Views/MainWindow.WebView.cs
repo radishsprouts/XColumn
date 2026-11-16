@@ -315,6 +315,8 @@ namespace XColumn.Views
             // 二重購読防止のため一旦解除してから登録する。
             col.GoBackRequested -= OnColumnGoBackRequested;
             col.GoBackRequested += OnColumnGoBackRequested;
+            col.NavigateHomeRequested -= OnColumnNavigateHomeRequested;
+            col.NavigateHomeRequested += OnColumnNavigateHomeRequested;
             col.SuspendRequested -= OnColumnSuspendRequested;
             col.SuspendRequested += OnColumnSuspendRequested;
             col.RateLimitSuspendRequested -= OnColumnRateLimitSuspendRequested;
@@ -364,6 +366,21 @@ namespace XColumn.Views
 
                 string url = args.Uri;
                 if (url.StartsWith("chrome-extension://") || url == "about:blank") return;
+
+                // カラムがロックされている場合、基点URLへの復帰や同一URL以外への遷移をブロック
+                if (col.IsLocked)
+                {
+                    if (!string.Equals(url, col.Url, StringComparison.OrdinalIgnoreCase))
+                    {
+                        args.Cancel = true;
+                        // Xのドメインであればフォーカスモードで開く
+                        if (IsAllowedDomain(url) || IsAllowedDomain(url, true))
+                        {
+                            Dispatcher.InvokeAsync(() => EnterFocusModeWithUrl(url));
+                        }
+                        return;
+                    }
+                }
 
                 if (IsAllowedDomain(url, true) && !_isFocusMode)
                 {
@@ -508,23 +525,18 @@ namespace XColumn.Views
                 // そのリストを履歴の起点にして、ESCや「←」で一覧まで戻らないようにする。
                 if (IsListIndexUrl(col.Url) && !string.IsNullOrEmpty(ExtractListUrl(url)))
                 {
+                    col.Url = ExtractListUrl(url);
+                    col.LastValidUrl = col.Url;
                     ResetNavigationHistory(webView.CoreWebView2);
                 }
 
-                // ラムの基点URLとして保存したくないため col.Url には反映しない。
-                // これにより再起動時は直前のタイムライン（ホームなど）が復元される。
-                if (IsAllowedDomain(url, false))
+                // 基点URL保護:
+                // カラム内でのブラウジング（ユーザープロフィールやハッシュタグ等への遷移）によって
+                // 本来のカラム基点URL(col.Url)が勝手に上書きされないよう保護する。
+                // （復旧用 LastValidUrl も本来の基点URLで維持）
+                if (!string.IsNullOrEmpty(col.Url))
                 {
-                    col.Url = url;
-                }
-
-                // URL変更時のモデル更新。
-                // 設定ページ(/settings)や詳細ページ(/status/)などの「Focus対象」URLは、
-                // カラムの基点URLとして保存したくないため col.Url には反映しない。
-                // これにより再起動時は直前のタイムライン（ホームなど）が復元される。
-                if (IsAllowedDomain(url, false))
-                {
-                    col.Url = url;
+                    col.LastValidUrl = col.Url;
                 }
 
                 ApplyCustomCss(webView.CoreWebView2, url, col);
@@ -711,7 +723,7 @@ namespace XColumn.Views
                         isVideo = isVideoNode.GetValue<bool>();
                     }
 
-                    if (!string.IsNullOrEmpty(url) && IsAllowedDomain(url, true))
+                    if (!string.IsNullOrEmpty(url) && (IsAllowedDomain(url, true) || IsAllowedDomain(url, false)))
                     {
                         _isMediaFocusIntent = url.Contains("/photo/") || url.Contains("/video/");
 
@@ -1472,11 +1484,15 @@ namespace XColumn.Views
                 if (col.AssociatedWebView?.CoreWebView2 != null)
                 {
                     string colUrl = col.AssociatedWebView.CoreWebView2.Source;
-                    if (IsAllowedDomain(colUrl, true) && colUrl != col.Url)
+                    if (colUrl != col.Url)
                     {
                         if (col.AssociatedWebView.CoreWebView2.CanGoBack)
                         {
                             col.AssociatedWebView.CoreWebView2.GoBack();
+                        }
+                        else if (!string.IsNullOrEmpty(col.Url))
+                        {
+                            col.AssociatedWebView.CoreWebView2.Navigate(col.Url);
                         }
                     }
                     col.ResetCountdown();
@@ -1889,12 +1905,31 @@ namespace XColumn.Views
 
         /// <summary>
         /// ColumnData からの「戻る」要求を受けて、実WebViewで履歴を戻します。
+        /// 履歴で戻れない場合でも、基点URLと異なるページを表示している場合は自動的に基点URLへ復帰します。
         /// </summary>
         private void OnColumnGoBackRequested(ColumnData col)
         {
-            if (col.AssociatedWebView?.CoreWebView2 != null && col.AssociatedWebView.CoreWebView2.CanGoBack)
+            var core = col.AssociatedWebView?.CoreWebView2;
+            if (core == null) return;
+
+            if (core.CanGoBack)
             {
-                col.AssociatedWebView.CoreWebView2.GoBack();
+                core.GoBack();
+            }
+            else if (!string.IsNullOrEmpty(col.Url) && !string.Equals(core.Source, col.Url, StringComparison.OrdinalIgnoreCase))
+            {
+                core.Navigate(col.Url);
+            }
+        }
+
+        /// <summary>
+        /// ColumnData からの「基点URLに戻る」要求を受けて、基点URLへ復帰します。
+        /// </summary>
+        private void OnColumnNavigateHomeRequested(ColumnData col)
+        {
+            if (col.AssociatedWebView?.CoreWebView2 != null && !string.IsNullOrEmpty(col.Url))
+            {
+                col.AssociatedWebView.CoreWebView2.Navigate(col.Url);
             }
         }
 

@@ -647,7 +647,30 @@ namespace XColumn.Scripts
 
         const isFocusTarget = (url) => {
             if (!url) return false;
-            return url.includes('/status/') || url.includes('/settings');
+            try {
+                const u = new URL(url, window.location.href);
+                if (!u.hostname.endsWith('x.com') && !u.hostname.endsWith('twitter.com')) return false;
+
+                const path = u.pathname;
+                if (path.includes('/status/') || path.includes('/settings')) return true;
+                if (path.includes('/hashtag/')) return true;
+                if (path.includes('/i/topics/') || path.includes('/topics/')) return true;
+
+                // ユーザープロフィール判定（/username や /username/... 等）
+                const segments = path.split('/').filter(Boolean);
+                if (segments.length >= 1) {
+                    const first = segments[0].toLowerCase();
+                    const reserved = [
+                        'home', 'explore', 'notifications', 'messages', 'i', 
+                        'compose', 'intent', 'search', 'lists', 'settings',
+                        'login', 'logout', 'signup', 'tos', 'privacy', 'about'
+                    ];
+                    if (!reserved.includes(first) && /^[a-zA-Z0-9_]{1,15}$/.test(first)) {
+                        return true;
+                    }
+                }
+            } catch(e) {}
+            return false;
         };
 
         // 設定値を見て、横取り（インターセプト）すべきかを判定する
@@ -657,12 +680,24 @@ namespace XColumn.Scripts
             const isMediaUrl = url.includes('/photo/') || url.includes('/video/');
             // メディアクリックの遷移が無効なら横取りしない
             if (isMediaUrl && window.xColumnDisableMediaFocus === true) return false;
-            // ツイートクリックの遷移が無効なら横取りしない
-            if (!isMediaUrl && window.xColumnDisableTweetFocus === true) return false;
+            // ツイートクリックの遷移が無効なら横取りしない（ただしプロフィール等は誤遷移防止のため横取りする）
+            if (url.includes('/status/') && !isMediaUrl && window.xColumnDisableTweetFocus === true) return false;
             // 投稿画面は除外
             if (url.includes('/compose/') || url.includes('/intent/')) return false;
             
             return true;
+        };
+
+        const originalPush = history.pushState;
+        history.pushState = function(state, title, url) {
+            try {
+                const fullUrl = new URL(url, window.location.href).href;
+                if (shouldIntercept(fullUrl)) {
+                    window.chrome.webview.postMessage(JSON.stringify({ type: 'openFocusMode', url: fullUrl, isVideo: false }));
+                    return;
+                }
+            } catch(e) {}
+            return originalPush.apply(this, arguments);
         };
 
         const originalReplace = history.replaceState;

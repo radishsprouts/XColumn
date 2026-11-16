@@ -2542,6 +2542,15 @@ namespace XColumn.Properties {
         }
         
         /// <summary>
+        ///   基点URLに戻る に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Tooltip_Home {
+            get {
+                return ResourceManager.GetString("Tooltip_Home", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   リプライ(返信)を非表示 に類似しているローカライズされた文字列を検索します。
         /// </summary>
         public static string Tooltip_HideReply {

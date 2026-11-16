@@ -348,6 +348,9 @@
   <data name="Tooltip_GoBack" xml:space="preserve">
     <value>戻る</value>
   </data>
+  <data name="Tooltip_Home" xml:space="preserve">
+    <value>基点URLに戻る</value>
+  </data>
   <data name="Tooltip_HideRT" xml:space="preserve">
     <value>RT(リポスト)を非表示</value>
   </data>

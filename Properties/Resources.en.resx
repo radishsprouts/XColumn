@@ -348,6 +348,9 @@ Restart now?</value>
   <data name="Tooltip_GoBack" xml:space="preserve">
     <value>Go Back</value>
   </data>
+  <data name="Tooltip_Home" xml:space="preserve">
+    <value>Return to Home URL</value>
+  </data>
   <data name="Tooltip_HideRT" xml:space="preserve">
     <value>Hide Reposts (RT)</value>
   </data>
