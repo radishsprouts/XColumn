@@ -145,7 +145,7 @@ namespace XColumn.Views
 
             if (settings.Columns != null)
             {
-                foreach (var col in settings.Columns)
+                foreach (ColumnData col in settings.Columns)
                 {
                     // 外部サイトカラムはドメイン制限を免除（http/httpsのみ許可）
                     bool allowed = IsAllowedDomain(col.Url) || (col.IsExternalSite && IsValidHttpUrl(col.Url));

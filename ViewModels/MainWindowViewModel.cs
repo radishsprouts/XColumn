@@ -1,94 +1,302 @@
-﻿using System.Net;
+﻿using System.Collections.ObjectModel;
+using System.Net;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
+using XColumn.Helpers;
 using XColumn.Messages;
+using XColumn.Models;
 using XColumn.Properties;
 using XColumn.Services;
 
 namespace XColumn.ViewModels
 {
     /// <summary>
-    /// MainWindow のビューモデル。
-    /// カラム追加・終了などの操作をコマンドとして提供します。
-    /// 実際のカラム追加(ドメイン検証含む)は WeakReferenceMessenger 経由で View へ要求し、
-    /// 入力ダイアログ等は IDialogService を介して表示します。
+    /// MainWindow のコア状態管理およびメニュー・全体操作を司るメイン ViewModel。
+    /// 以前の MainWindow からビジネスロジック・タイマー管理・状態保持を完全移譲し、
+    /// View 側を純粋な UI 描画層へスリム化します。
     /// </summary>
     public partial class MainWindowViewModel : ViewModelBase
     {
-        // ===== Constants (各種デフォルト/フォーマットURL。旧 MainWindow.Columns.cs の定数と同一) =====
+        #region Constants
 
-        /// <summary>「ホーム」カラムの既定URL。</summary>
         private const string DefaultHomeUrl = "https://x.com/home";
-
-        /// <summary>「通知」カラムの既定URL。</summary>
         private const string DefaultNotifyUrl = "https://x.com/notifications";
-
-        /// <summary>「トレンド」カラムの既定URL。</summary>
         private const string DefaultTrendUrl = "https://x.com/explore/tabs/trending";
-
-        /// <summary>「グローバルトレンド」カラムの既定URL。</summary>
         private const string DefaultGlobalTrendUrl = "https://x.com/i/jf/global-trending/home";
-
-        /// <summary>「Grok」カラムの既定URL。</summary>
         private const string DefaultGrokUrl = "https://x.com/i/grok";
-
-        /// <summary>「検索」カラムのURL書式（{0} = URLエンコード済みキーワード）。</summary>
         private const string SearchUrlFormat = "https://x.com/search?q={0}";
-
-        /// <summary>「リスト」カラムのURL書式（{0} = リストID）。</summary>
         private const string ListUrlFormat = "https://x.com/i/lists/{0}";
 
-        // ===== Fields =====
+        #endregion
 
-        /// <summary>ダイアログ表示サービス（DIで注入）。</summary>
+        #region Services
+
+        private readonly ISettingsService _settingsService;
+        private readonly IProfileService _profileService;
         private readonly IDialogService _dialogService;
+        private readonly IAppTimerService _timerService;
+        private readonly IRateLimitService _rateLimitService;
+        private readonly IAudioService _audioService;
+        private readonly IUpdateService _updateService;
+        private readonly IStatusService _statusService;
+        private readonly IWebViewEnvironmentService _environmentService;
 
-        // ===== Constructor =====
+        #endregion
+
+        #region Observable Collections & Properties
 
         /// <summary>
-        /// 依存サービスを注入してビューモデルを初期化します。
+        /// 現在開かれているカラムのコレクション。
         /// </summary>
-        /// <param name="dialogService">入力/メッセージダイアログ表示用のサービス。</param>
-        public MainWindowViewModel(IDialogService dialogService)
+        public ObservableCollection<ColumnViewModel> Columns { get; } = new();
+
+        /// <summary>
+        /// 現在アクティブなプロファイル名。
+        /// </summary>
+        [ObservableProperty]
+        private string activeProfile = "";
+
+        /// <summary>
+        /// 全体音量（0〜100）。
+        /// </summary>
+        [ObservableProperty]
+        private int appVolume = 100;
+
+        partial void OnAppVolumeChanged(int value)
         {
-            _dialogService = dialogService;
+            // 音量変更時は IAudioService を通じて自プロセスPIDにのみ適用
+            _audioService.SetVolume(value / 100.0, Array.Empty<int>());
         }
 
-        // ===== Commands =====
+        /// <summary>
+        /// アプリのテーマ ("System", "Light", "Dark")。
+        /// </summary>
+        [ObservableProperty]
+        private string currentTheme = "System";
 
         /// <summary>
-        /// 「ホーム」カラムを追加します。
+        /// テーマが変更されたときに View へ通知するイベント。
         /// </summary>
+        public event Action<string>? ThemeChanged;
+
+        partial void OnCurrentThemeChanged(string value)
+        {
+            ThemeChanged?.Invoke(value);
+        }
+
+        /// <summary>
+        /// アプリ言語 ("ja-JP", "en-US")。
+        /// </summary>
+        [ObservableProperty]
+        private string currentLanguage = "ja-JP";
+
+        /// <summary>
+        /// カラムを均等幅で配置するかどうか。
+        /// </summary>
+        [ObservableProperty]
+        private bool isUniformGrid = false;
+
+        /// <summary>
+        /// 2段グリッドレイアウトを使用するかどうか。
+        /// </summary>
+        [ObservableProperty]
+        private bool useTwoTierLayout = false;
+
+        /// <summary>
+        /// カラムヘッダーに URL を表示するかどうか。
+        /// </summary>
+        [ObservableProperty]
+        private bool showColumnUrl = true;
+
+        /// <summary>
+        /// ウィンドウアクティブ時に自動更新タイマーを一時停止するかどうか。
+        /// </summary>
+        [ObservableProperty]
+        private bool stopTimerWhenActive = false;
+
+        partial void OnStopTimerWhenActiveChanged(bool value)
+        {
+            _timerService.StopTimerWhenActive = value;
+        }
+
+        /// <summary>
+        /// サーバー接続状態。
+        /// </summary>
+        [ObservableProperty]
+        private ConnectionStatus connectionStatus = ConnectionStatus.Normal;
+
+        /// <summary>
+        /// レート制限到達推定メッセージ。
+        /// </summary>
+        [ObservableProperty]
+        private string rateLimitEstimateText = "";
+
+        #endregion
+
+        #region Constructor
+
+        public MainWindowViewModel(
+            ISettingsService settingsService,
+            IProfileService profileService,
+            IDialogService dialogService,
+            IAppTimerService timerService,
+            IRateLimitService rateLimitService,
+            IAudioService audioService,
+            IUpdateService updateService,
+            IStatusService statusService,
+            IWebViewEnvironmentService environmentService)
+        {
+            _settingsService = settingsService;
+            _profileService = profileService;
+            _dialogService = dialogService;
+            _timerService = timerService;
+            _rateLimitService = rateLimitService;
+            _audioService = audioService;
+            _updateService = updateService;
+            _statusService = statusService;
+            _environmentService = environmentService;
+
+            // 接続状態監視の購読
+            _statusService.StatusChanged += (s, e) =>
+            {
+                ConnectionStatus = e.NewStatus;
+            };
+
+            // 自動シャットダウンコールバック
+            _timerService.AutoShutdownRequested += () =>
+            {
+                Logger.Log("[MainWindowViewModel] Auto shutdown triggered.");
+                WeakReferenceMessenger.Default.Send(new CloseAppRequest());
+            };
+        }
+
+        #endregion
+
+        #region Column Management
+
+        /// <summary>
+        /// カラムを追加し、タイマーサービスへ登録します。
+        /// </summary>
+        public void AddColumn(ColumnViewModel column)
+        {
+            Columns.Add(column);
+            _timerService.RegisterColumn(column);
+            column.Closed += OnColumnClosed;
+        }
+
+        /// <summary>
+        /// カラムを削除し、タイマーサービスから登録解除します。
+        /// </summary>
+        public void RemoveColumn(ColumnViewModel column)
+        {
+            column.Closed -= OnColumnClosed;
+            _timerService.UnregisterColumn(column);
+            Columns.Remove(column);
+            column.Close();
+        }
+
+        /// <summary>
+        /// すべてのカラムを登録解除してクリアします。
+        /// </summary>
+        public void ClearColumns()
+        {
+            foreach (var col in Columns.ToList())
+            {
+                col.Closed -= OnColumnClosed;
+                _timerService.UnregisterColumn(col);
+                col.Close();
+            }
+            Columns.Clear();
+            _timerService.ClearColumns();
+        }
+
+        private void OnColumnClosed(ColumnViewModel column)
+        {
+            RemoveColumn(column);
+        }
+
+        /// <summary>
+        /// AppSettings からカラムリストを復元します。
+        /// </summary>
+        public void LoadColumnsFromSettings(AppSettings settings)
+        {
+            ClearColumns();
+
+            if (settings.Columns == null || settings.Columns.Count == 0)
+            {
+                // デフォルトのホームカラムを1つ追加
+                var defaultCol = new ColumnViewModel
+                {
+                    Url = DefaultHomeUrl,
+                    Width = settings.ColumnWidth > 0 ? settings.ColumnWidth : 380,
+                    ShowRateLimitRemaining = settings.ShowRateLimitRemaining,
+                    UseSoftRefresh = settings.UseSoftRefresh,
+                    UseRefreshJitter = settings.UseRefreshJitter,
+                    KeepUnreadPosition = settings.KeepUnreadPosition
+                };
+                AddColumn(defaultCol);
+                return;
+            }
+
+            foreach (var cfg in settings.Columns)
+            {
+                var col = ColumnViewModel.FromConfig(cfg);
+                col.ShowRateLimitRemaining = settings.ShowRateLimitRemaining;
+                col.UseSoftRefresh = settings.UseSoftRefresh;
+                col.UseRefreshJitter = settings.UseRefreshJitter;
+                col.KeepUnreadPosition = settings.KeepUnreadPosition;
+                AddColumn(col);
+            }
+        }
+
+        /// <summary>
+        /// 現在のカラム構成を AppSettings.Columns へ反映します（URL巻き戻り副作用なし）。
+        /// </summary>
+        public void SaveColumnsToSettings(AppSettings settings)
+        {
+            settings.Columns = Columns.Select(c => c.ToConfig()).ToList();
+        }
+
+        /// <summary>
+        /// 429到達推定時間を更新します。
+        /// </summary>
+        public void UpdateRateLimitEstimate()
+        {
+            RateLimitEstimateText = _rateLimitService.BuildRateLimitEstimate(Columns, ActiveProfile);
+        }
+
+        /// <summary>
+        /// 保護設定変更時などに全カラムのレート制限状態を一括解除します。
+        /// </summary>
+        public void ResetAllRateLimits()
+        {
+            foreach (var col in Columns)
+            {
+                col.ClearRateLimitState();
+            }
+            UpdateRateLimitEstimate();
+        }
+
+        #endregion
+
+        #region Menu Commands
+
         [RelayCommand]
         private void AddHome() => RequestAddColumn(DefaultHomeUrl);
 
-        /// <summary>
-        /// 「通知」カラムを追加します。
-        /// </summary>
         [RelayCommand]
         private void AddNotify() => RequestAddColumn(DefaultNotifyUrl);
 
-        /// <summary>
-        /// 「トレンド」カラムを追加します。
-        /// </summary>
         [RelayCommand]
         private void AddTrend() => RequestAddColumn(DefaultTrendUrl);
 
-        /// <summary>
-        /// 「グローバルトレンド」カラムを追加します。
-        /// </summary>
         [RelayCommand]
         private void AddGlobalTrend() => RequestAddColumn(DefaultGlobalTrendUrl);
 
-        /// <summary>
-        /// 「Grok」カラムを追加します。
-        /// </summary>
         [RelayCommand]
         private void AddGrok() => RequestAddColumn(DefaultGrokUrl);
 
-        /// <summary>
-        /// 「検索」カラムを追加します。キーワードを入力ダイアログで受け取ります。
-        /// </summary>
         [RelayCommand]
         private void AddSearch()
         {
@@ -99,9 +307,6 @@ namespace XColumn.ViewModels
             }
         }
 
-        /// <summary>
-        /// 「リスト」カラムを追加します。リストID または URL を入力ダイアログで受け取ります。
-        /// </summary>
         [RelayCommand]
         private void AddList()
         {
@@ -110,38 +315,27 @@ namespace XColumn.ViewModels
 
             if (input.StartsWith("http"))
             {
-                // URLはそのまま追加要求（ドメイン検証・不正時のエラー表示は View 側の AddNewColumn に委譲）
                 RequestAddColumn(input);
             }
             else if (long.TryParse(input, out _))
             {
-                // 数値はリストURL形式へ変換
                 RequestAddColumn(string.Format(ListUrlFormat, input));
             }
             else
             {
-                // 数値でもURLでもない不正入力
                 _dialogService.ShowMessage(Resources.Err_InputIdOrUrl, Resources.Common_Error);
             }
         }
 
-        /// <summary>
-        /// 「リスト(自動遷移)」カラムを追加します。
-        /// このカラムは特殊フラグ(IsListAutoNav)を伴うため、View 側で生成します。
-        /// </summary>
         [RelayCommand]
         private void AddListAuto() => WeakReferenceMessenger.Default.Send(new AddListAutoColumnRequest());
 
-        /// <summary>
-        /// 「ユーザー」カラムを追加します。ユーザーIDを入力ダイアログで受け取ります。
-        /// </summary>
         [RelayCommand]
         private void AddUser()
         {
             var input = _dialogService.ShowInput(Resources.AddUser, Resources.UserId);
             if (string.IsNullOrEmpty(input)) return;
 
-            // 先頭の @ を除去
             string userId = input.Trim().TrimStart('@');
             if (!string.IsNullOrEmpty(userId))
             {
@@ -149,9 +343,6 @@ namespace XColumn.ViewModels
             }
         }
 
-        /// <summary>
-        /// 【試験的】X以外のサイトをカラムとして追加します。URLを入力ダイアログで受け取ります。
-        /// </summary>
         [RelayCommand]
         private void AddSite()
         {
@@ -167,19 +358,12 @@ namespace XColumn.ViewModels
             WeakReferenceMessenger.Default.Send(new AddSiteColumnRequest(url));
         }
 
-        /// <summary>
-        /// アプリを終了します。
-        /// </summary>
         [RelayCommand]
         private void Exit() => WeakReferenceMessenger.Default.Send(new CloseAppRequest());
 
-        // ===== Private Methods =====
-
-        /// <summary>
-        /// 指定URLのカラム追加要求を WeakReferenceMessenger 経由で View へ送信します。
-        /// </summary>
-        /// <param name="url">追加するカラムが開く対象URL。</param>
         private void RequestAddColumn(string url)
             => WeakReferenceMessenger.Default.Send(new AddColumnRequest(url));
+
+        #endregion
     }
 }

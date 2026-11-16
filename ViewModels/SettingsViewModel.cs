@@ -5,6 +5,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using XColumn.Helpers;
 using XColumn.Models;
 using XColumn.Properties;
 using XColumn.Services;
@@ -40,6 +41,11 @@ namespace XColumn.ViewModels
         /// ダイアログ表示を担うサービス。
         /// </summary>
         private readonly IDialogService _dialogService;
+
+        /// <summary>
+        /// 設定永続化サービス。
+        /// </summary>
+        private readonly ISettingsService? _settingsService;
 
         /// <summary>
         /// アプリ全体構成（言語・起動プロファイル設定を含む）。
@@ -326,6 +332,12 @@ namespace XColumn.ViewModels
         /// </summary>
         public event Action? SettingsChanged;
 
+        /// <summary>
+        /// 現在アクティブなプロファイル名。
+        /// </summary>
+        [ObservableProperty]
+        private string activeProfileName = "";
+
         #endregion
 
         #region Constructor
@@ -337,9 +349,19 @@ namespace XColumn.ViewModels
         /// <param name="appConfig">アプリ全体構成。</param>
         /// <param name="configPath">app_config.json のパス。</param>
         /// <param name="dialogService">ダイアログ表示サービス。</param>
-        public SettingsViewModel(AppSettings currentSettings, AppConfig appConfig, string configPath, IDialogService dialogService)
+        /// <param name="settingsService">設定永続化サービス（省略可）。</param>
+        /// <param name="activeProfileName">アクティブプロファイル名（省略可）。</param>
+        public SettingsViewModel(
+            AppSettings currentSettings,
+            AppConfig appConfig,
+            string configPath,
+            IDialogService dialogService,
+            ISettingsService? settingsService = null,
+            string activeProfileName = "")
         {
             _dialogService = dialogService;
+            _settingsService = settingsService;
+            ActiveProfileName = activeProfileName;
             if (currentSettings == null) currentSettings = new AppSettings();
             _appConfig = appConfig;
             _appConfigPath = configPath;
@@ -603,10 +625,20 @@ namespace XColumn.ViewModels
             {
                 try
                 {
-                    string json = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(_appConfigPath, json);
+                    if (_settingsService != null)
+                    {
+                        _settingsService.SaveAppConfig(_appConfig);
+                    }
+                    else
+                    {
+                        string json = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
+                        File.WriteAllText(_appConfigPath, json);
+                    }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to save app_config.json: {ex.Message}");
+                }
             }
 
             bool languageChanged = _appConfig.Language != _initialLanguage;
@@ -671,10 +703,20 @@ namespace XColumn.ViewModels
             {
                 try
                 {
-                    string json = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
-                    File.WriteAllText(_appConfigPath, json);
+                    if (_settingsService != null)
+                    {
+                        _settingsService.SaveAppConfig(_appConfig);
+                    }
+                    else
+                    {
+                        string json = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
+                        File.WriteAllText(_appConfigPath, json);
+                    }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to save app_config.json: {ex.Message}");
+                }
             }
 
             // 編集可能フィールドを Result へ書き戻し
@@ -776,6 +818,49 @@ namespace XColumn.ViewModels
             foreach (var item in items)
             {
                 NgWords.Remove(item);
+            }
+        }
+
+        /// <summary>
+        /// ブラウザの一時キャッシュを削除します。
+        /// </summary>
+        [RelayCommand]
+        private void ClearBrowserCache()
+        {
+            if (_settingsService == null) return;
+
+            string confirmMsg = Resources.ResourceManager.GetString("Msg_ClearCacheConfirm") 
+                ?? "ブラウザのキャッシュを削除しますか？\n(ログイン情報は保持されます)";
+            string successMsg = Resources.ResourceManager.GetString("Msg_ClearCacheSuccess") 
+                ?? "ブラウザのキャッシュを削除しました。";
+            string failedMsg = Resources.ResourceManager.GetString("Msg_ClearCacheFailed") 
+                ?? "キャッシュの削除に失敗したか、一部ファイルが使用中です。";
+
+            var result = _dialogService.ShowMessage(
+                confirmMsg,
+                Resources.Settings_Title,
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                bool success = _settingsService.ClearBrowserCache(ActiveProfileName);
+                if (success)
+                {
+                    _dialogService.ShowMessage(
+                        successMsg,
+                        Resources.Settings_Title,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    _dialogService.ShowMessage(
+                        failedMsg,
+                        Resources.Settings_Title,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
             }
         }
 

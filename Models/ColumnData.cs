@@ -1032,5 +1032,51 @@ public void NotifyRateLimited(DateTimeOffset? resetTime, bool hasRateLimitHeader
         private struct POINT { public int X; public int Y; }
 
         #endregion
+
+        #region Implicit Conversion with ColumnConfig
+
+        public static implicit operator ColumnConfig(ColumnData data)
+        {
+            return new ColumnConfig
+            {
+                Url = data.Url,
+                Width = data.Width,
+                RefreshIntervalSeconds = data.RefreshIntervalSeconds,
+                IsAutoRefreshEnabled = data.IsAutoRefreshEnabled,
+                IsRetweetHidden = data.IsRetweetHidden,
+                IsReplyHidden = data.IsReplyHidden,
+                IsLocked = data.IsLocked,
+                ZoomFactor = data.ZoomFactor,
+                MediaScalePercentage = data.MediaScalePercentage,
+                ProfileName = data.ProfileName,
+                IsExternalSite = data.IsExternalSite,
+                IsListAutoNav = data.IsListAutoNav,
+                LastValidUrl = data.LastValidUrl,
+                LastInputTime = data.LastInputTime
+            };
+        }
+
+        public static implicit operator ColumnData(ColumnConfig config)
+        {
+            return new ColumnData
+            {
+                Url = config.Url,
+                Width = config.Width,
+                RefreshIntervalSeconds = config.RefreshIntervalSeconds,
+                IsAutoRefreshEnabled = config.IsAutoRefreshEnabled,
+                IsRetweetHidden = config.IsRetweetHidden,
+                IsReplyHidden = config.IsReplyHidden,
+                IsLocked = config.IsLocked,
+                ZoomFactor = config.ZoomFactor,
+                MediaScalePercentage = config.MediaScalePercentage,
+                ProfileName = config.ProfileName,
+                IsExternalSite = config.IsExternalSite,
+                IsListAutoNav = config.IsListAutoNav,
+                LastValidUrl = config.LastValidUrl,
+                LastInputTime = config.LastInputTime
+            };
+        }
+
+        #endregion
     }
 }

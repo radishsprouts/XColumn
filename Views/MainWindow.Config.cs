@@ -188,7 +188,7 @@ namespace XColumn.Views
         private void CollectCurrentSettings(AppSettings settings)
         {
             // カラム構成・拡張機能
-            settings.Columns = new List<ColumnData>(Columns);
+            settings.Columns = Columns.Select(c => (ColumnConfig)c).ToList();
             settings.Extensions = new List<ExtensionItem>(_extensionList);
 
             // 動作設定

@@ -22,6 +22,9 @@ namespace XColumn.Services
 
         public event Action? AutoShutdownRequested;
 
+        /// <summary>ウィンドウアクティブ時にタイマーを一時停止するかどうか。</summary>
+        public bool StopTimerWhenActive { get; set; } = false;
+
         public AppTimerService()
         {
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };

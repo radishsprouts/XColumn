@@ -13,9 +13,9 @@ namespace XColumn.Models
         public int ConfigVersion { get; set; } = 1;
 
         /// <summary>
-        /// 表示するカラム（WebView）のリスト。
+        /// 表示するカラム（WebView）の設定リスト。
         /// </summary>
-        public List<ColumnData> Columns { get; set; } = new List<ColumnData>();
+        public List<ColumnConfig> Columns { get; set; } = new List<ColumnConfig>();
 
         /// <summary>
         /// インストール（登録）されたChrome拡張機能のリスト。

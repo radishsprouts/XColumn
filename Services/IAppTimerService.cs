@@ -48,6 +48,9 @@ namespace XColumn.Services
         /// <summary>登録されているすべてのカラムの登録を解除します。</summary>
         void ClearColumns();
 
+        /// <summary>ウィンドウアクティブ時にタイマーを一時停止するかどうか。</summary>
+        bool StopTimerWhenActive { get; set; }
+
         /// <summary>中央タイマーを開始します。</summary>
         void Start();
 
