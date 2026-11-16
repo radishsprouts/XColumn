@@ -1,0 +1,35 @@
+name: Build Check (CI)
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/release.yml'
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-check:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build Framework-Dependent
+        shell: pwsh
+        run: |
+          dotnet build XColumn.csproj -c Release
+
+      - name: Test Publish Framework-Dependent
+        shell: pwsh
+        run: |
+          dotnet publish XColumn.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o test_fw

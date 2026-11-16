@@ -1,0 +1,108 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v1.54.3, leave blank to use version from project)'
+        required: false
+        default: ''
+      draft:
+        description: 'Create draft release'
+        required: false
+        default: false
+        type: boolean
+      prerelease:
+        description: 'Create pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Determine Version and Tag
+        id: vars
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ github.event.inputs.tag_name }}" -ne "") {
+            $tag = "${{ github.event.inputs.tag_name }}"
+          } elseif ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+          } else {
+            [xml]$proj = Get-Content XColumn.csproj
+            $ver = $proj.Project.PropertyGroup.Version
+            $tag = "v$ver"
+          }
+          Write-Output "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          Write-Output "Resolved Release Tag: $tag"
+
+      - name: Build Framework-Dependent (Lightweight)
+        shell: pwsh
+        run: |
+          dotnet publish XColumn.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/framework
+
+      - name: Build Self-Contained (Full Runtime)
+        shell: pwsh
+        run: |
+          dotnet publish XColumn.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/contained
+
+      - name: Package Release Assets & Generate SHA-256
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts
+          $tag = $env:RELEASE_TAG
+
+          # 同梱ファイル（ライセンス・Readme）をコピー
+          Copy-Item LICENSE publish/framework/
+          Copy-Item Readme.md publish/framework/
+          Copy-Item LICENSE publish/contained/
+          Copy-Item Readme.md publish/contained/
+
+          # ZIP アーカイブ作成
+          $fwZip = "artifacts/XColumn_${tag}.zip"
+          $scZip = "artifacts/XColumn_${tag}_Contained.zip"
+
+          Compress-Archive -Path "publish/framework/*" -DestinationPath $fwZip -Force
+          Compress-Archive -Path "publish/contained/*" -DestinationPath $scZip -Force
+
+          # SHA-256 ハッシュ生成（自己更新検証用の小文字64桁）
+          $fwHash = (Get-FileHash -Path $fwZip -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$fwZip.sha256", $fwHash)
+
+          $scHash = (Get-FileHash -Path $scZip -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$scZip.sha256", $scHash)
+
+          Get-ChildItem artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          draft: ${{ github.event.inputs.draft || false }}
+          prerelease: ${{ github.event.inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            artifacts/XColumn_*.zip
+            artifacts/XColumn_*.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

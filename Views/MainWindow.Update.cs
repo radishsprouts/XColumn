@@ -58,7 +58,7 @@ namespace XColumn.Views
                     client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("XColumn", ver));
 
                     // 最新リリース情報のエンドポイントにGETリクエストを送信
-                    var res = await client.GetAsync("https://api.github.com/repos/mashersan/XColumn/releases/latest");
+                    var res = await client.GetAsync("https://api.github.com/repos/radishsprouts/XColumn/releases/latest");
                     if (!res.IsSuccessStatusCode)
                     {
                         if (manual)

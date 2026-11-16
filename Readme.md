@@ -49,7 +49,7 @@ TweetDeck（旧）風のシンプルなマルチカラム型クライアント�
 ## 🚀 使い方
 
 ### ダウンロード
-* [v1.54.2(2026.09.19)](https://github.com/mashersan/XColumn/releases)
+* [v1.54.3](https://github.com/radishsprouts/XColumn/releases)
 ### 基本操作
 1.  `XColumn.exe` を実行します。
 2.  **プロファイル**: 必要に応じて「新規」ボタンでプロファイルを作成します（デフォルトでも使用可能です）。
@@ -94,6 +94,10 @@ Chromeウェブストアの拡張機能をXColumnで使用するには、以下�
 5.  ビルドして実行します。
 
 ## 更新履歴
+### v1.54.3 (2026/11/16)
+- 🚀 機能改善: カラムの誤遷移防止と基点URL復旧機能を追加しました。
+- 🔧 内部変更: GitHub Actions による自動ビルド・リリース公開ワークフローを整備し、自己更新の参照先をフォーク先リポジトリへ変更しました。
+
 ### v1.54.2 (2026/09/19)
 - 🐛 バグ修正: 特に操作していないのに、ステータス表示が「不安定（API制限中）」になる問題を修正しました。サーバー状態の確認はログインしていない状態でAPIサーバーへ接続しているため、このとき返る429はご利用中のアカウントのAPI残数とは無関係でした。今後は、実際にカラムがAPI制限で停止・休止している場合のみ「API制限中」と表示します。
 - 🐛 バグ修正: 通知件数の取得など、タイムラインの取得とは関係のない補助的な通信でAPI制限(429)が返ったときにも、カラムが自動休止してしまう場合があった問題を修正しました。自動休止の判定は、各カラムの主タイムライン（ホーム・リスト・検索など）の通信のみを対象とします。
@@ -222,7 +226,7 @@ A simple multi-column client inspired by (old) TweetDeck. It does not use the X 
 ## 🚀 How to Use
 
 ### Download
-* [v1.54.2(2026.09.19)](https://github.com/mashersan/XColumn/releases)
+* [v1.54.3](https://github.com/radishsprouts/XColumn/releases)
 ### Basic Operations
 1.  Run `XColumn.exe`.
 2.  **Profiles**: Create a new profile with the "New" button if needed (the Default profile is also available).
