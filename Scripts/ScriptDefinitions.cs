@@ -690,30 +690,38 @@ namespace XColumn.Scripts
 
         const originalPush = history.pushState;
         history.pushState = function(state, title, url) {
+            const ret = originalPush.apply(this, arguments);
             try {
                 const fullUrl = new URL(url, window.location.href).href;
                 if (shouldIntercept(fullUrl)) {
                     window.chrome.webview.postMessage(JSON.stringify({ type: 'openFocusMode', url: fullUrl, isVideo: false }));
-                    return;
                 }
             } catch(e) {}
-            return originalPush.apply(this, arguments);
+            return ret;
         };
 
         const originalReplace = history.replaceState;
         history.replaceState = function(state, title, url) {
+            const ret = originalReplace.apply(this, arguments);
             try {
                 const fullUrl = new URL(url, window.location.href).href;
                 if (shouldIntercept(fullUrl)) {
-                    // SPA遷移時（主に横スワイプなど）は動画判定が難しいためデフォルトfalse
                     window.chrome.webview.postMessage(JSON.stringify({ type: 'openFocusMode', url: fullUrl, isVideo: false }));
-                    return;
                 }
             } catch(e) {}
-            return originalReplace.apply(this, arguments);
+            return ret;
         };
 
         document.addEventListener('click', function(e) {
+            // Twitter画面内の戻るボタン（app-bar-back-button 等）クリック時の確実な復帰支援
+            const backBtn = e.target.closest('[data-testid=""app-bar-back-button""]') ||
+                            e.target.closest('button[aria-label=""戻る""]') ||
+                            e.target.closest('button[aria-label=""Back""]');
+            if (backBtn) {
+                try {
+                    window.chrome.webview.postMessage(JSON.stringify({ type: 'twitterBackClicked' }));
+                } catch(err) {}
+            }
 
             // --- リンクカード（外部サイトのサムネイル）クリック ---
             // カード画像は card.layoutLarge.media が media 判定に含まれるため、

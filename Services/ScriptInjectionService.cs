@@ -161,10 +161,13 @@ namespace XColumn.Services
             }
         }
 
-        public async Task ApplyMediaExpandAsync(CoreWebView2 webView)
+        public async Task ApplyMediaExpandAsync(CoreWebView2 webView, bool disableMediaFocus = false, bool disableTweetFocus = false)
         {
             try
             {
+                string mediaFocusStr = disableMediaFocus ? "true" : "false";
+                string tweetFocusStr = disableTweetFocus ? "true" : "false";
+                await webView.ExecuteScriptAsync($"window.xColumnDisableMediaFocus = {mediaFocusStr}; window.xColumnDisableTweetFocus = {tweetFocusStr};");
                 await webView.ExecuteScriptAsync(ScriptDefinitions.ScriptInterceptClick);
             }
             catch (Exception ex)

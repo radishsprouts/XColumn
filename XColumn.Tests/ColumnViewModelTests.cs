@@ -8,7 +8,7 @@ namespace XColumn.Tests
     public class ColumnViewModelTests
     {
         [TestMethod]
-        public void GoBack_WhenLocked_DoesNotInvokeGoBackRequested()
+        public void GoBack_WhenLocked_StillInvokesGoBackRequestedForSafety()
         {
             // Arrange
             var vm = new ColumnViewModel { IsLocked = true };
@@ -19,7 +19,7 @@ namespace XColumn.Tests
             vm.GoBackCommand.Execute(null);
 
             // Assert
-            Assert.IsFalse(invoked, "Locked column must not trigger GoBackRequested.");
+            Assert.IsTrue(invoked, "Locked column must still trigger GoBackRequested to allow restoring base URL.");
         }
 
         [TestMethod]

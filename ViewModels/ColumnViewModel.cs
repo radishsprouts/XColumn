@@ -292,12 +292,11 @@ namespace XColumn.ViewModels
         }
 
         /// <summary>
-        /// 「戻る」操作。
+        /// 「戻る」操作。ロック中であっても基点URLへの復帰（戻る）は許可します。
         /// </summary>
         [RelayCommand]
         public void GoBack()
         {
-            if (IsLocked) return;
             GoBackRequested?.Invoke(this);
         }
 

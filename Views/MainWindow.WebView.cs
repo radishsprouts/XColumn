@@ -259,6 +259,33 @@ namespace XColumn.Views
                         double delta = json?["delta"]?.GetValue<double>() ?? 0;
                         PerformHorizontalScroll(delta);
                     }
+                    else if (type == "twitterBackClicked")
+                    {
+                        // Twitter画面内の戻るボタンが押されたときの復帰支援
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(250);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                if (webView.CoreWebView2 != null)
+                                {
+                                    string currentSrc = webView.CoreWebView2.Source ?? "";
+                                    if (!string.IsNullOrEmpty(col.Url) &&
+                                        !string.Equals(currentSrc.TrimEnd('/'), col.Url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        if (webView.CoreWebView2.CanGoBack)
+                                        {
+                                            webView.CoreWebView2.GoBack();
+                                        }
+                                        else
+                                        {
+                                            webView.CoreWebView2.Navigate(col.Url);
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    }
                 }
                 catch { }
             };
@@ -384,7 +411,7 @@ namespace XColumn.Views
                     await _scriptService.ApplyCustomCssAsync(webView.CoreWebView2, currentUrl, col, _currentSettings);
                     await _scriptService.ApplyVolumeAsync(webView.CoreWebView2, _currentSettings.AppVolume);
                     await _scriptService.ApplyYouTubeClickScriptAsync(webView.CoreWebView2);
-                    await _scriptService.ApplyMediaExpandAsync(webView.CoreWebView2);
+                    await _scriptService.ApplyMediaExpandAsync(webView.CoreWebView2, _currentSettings.DisableFocusModeOnMediaClick, _currentSettings.DisableFocusModeOnTweetClick);
                     await _scriptService.ApplyTrendingClickScriptAsync(webView.CoreWebView2);
                     await _scriptService.ApplyScrollSyncAsync(webView.CoreWebView2);
                     await _scriptService.ApplyNgWordsAsync(webView.CoreWebView2, _currentSettings.NgWords);
