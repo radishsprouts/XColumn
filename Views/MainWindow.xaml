@@ -109,6 +109,8 @@
                               Click="OpenSettings_Click"/>
                     <MenuItem Header="{x:Static p:Resources.Menu_Extensions}" 
                               Click="ManageExtensions_Click"/>
+                    <MenuItem Header="{x:Static p:Resources.Menu_ClearCache}" 
+                              Click="ClearCache_Click"/>
                     <Separator/>
                     <MenuItem Header="{x:Static p:Resources.Menu_StopActiveTimer}" 
                               IsCheckable="True" 

@@ -4,6 +4,7 @@ using Microsoft.Web.WebView2.Core;
 using XColumn.Helpers;
 using XColumn.Models;
 using XColumn.Scripts;
+using XColumn.ViewModels;
 
 namespace XColumn.Services
 {
@@ -219,6 +220,57 @@ namespace XColumn.Services
             catch (Exception ex)
             {
                 Logger.Log($"[ScriptInjectionService] ApplyDisableVideoAutoplay failed: {ex.Message}");
+            }
+        }
+
+        public async Task ApplyCustomCssAsync(CoreWebView2 webView, string url, ColumnViewModel? column, AppSettings settings)
+        {
+            bool retweet = column?.IsRetweetHidden ?? false;
+            bool reply = column?.IsReplyHidden ?? false;
+            int scale = column?.MediaScalePercentage ?? 100;
+            await ApplyCustomCssAsync(webView, url, retweet, reply, scale, settings);
+        }
+
+        public async Task ApplyYouTubeClickScriptAsync(CoreWebView2 webView)
+        {
+            try
+            {
+                await webView.ExecuteScriptAsync(ScriptDefinitions.ScriptYouTubeClick);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[ScriptInjectionService] ApplyYouTubeClickScript failed: {ex.Message}");
+            }
+        }
+
+        public async Task ApplyTrendingClickScriptAsync(CoreWebView2 webView)
+        {
+            try
+            {
+                await webView.ExecuteScriptAsync(ScriptDefinitions.ScriptTrendingClick);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[ScriptInjectionService] ApplyTrendingClickScript failed: {ex.Message}");
+            }
+        }
+
+        public async Task ApplyVolumeAsync(CoreWebView2 webView, double volume)
+        {
+            try
+            {
+                // カルチャ非依存（バグ#10対策）
+                string volStr = volume.ToString("F2", CultureInfo.InvariantCulture);
+                string script = $@"
+                    (function() {{
+                        const v = {volStr};
+                        document.querySelectorAll('video, audio').forEach(el => {{ el.volume = v; }});
+                    }})();";
+                await webView.ExecuteScriptAsync(script);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"[ScriptInjectionService] ApplyVolume failed: {ex.Message}");
             }
         }
     }

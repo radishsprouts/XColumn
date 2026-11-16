@@ -3,11 +3,13 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using XColumn.Helpers;
 using XColumn.Models;
+using XColumn.Properties;
 using XColumn.Services;
 using XColumn.ViewModels;
 using XColumn.Views;
-using XColumn.Helpers;
+using Resources = XColumn.Properties.Resources;
 
 // 曖昧さ回避
 using MessageBox = System.Windows.MessageBox;
@@ -16,6 +18,8 @@ namespace XColumn
 {
     /// <summary>
     /// アプリケーションのエントリポイント。
+    /// DIコンテナ、グローバル未処理例外ハンドラー、クラッシュログ保存、
+    /// および初期化パイプラインを統括します。
     /// </summary>
     public partial class App : System.Windows.Application
     {
@@ -29,18 +33,23 @@ namespace XColumn
         /// </summary>
         public IServiceProvider Services { get; private set; } = null!;
 
-        private string _userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
+        private readonly string _userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
 
         /// <summary>
         /// スタートアップ処理。
         /// </summary>
-        /// <param name="e">起動イベント引数。</param>
         protected override void OnStartup(StartupEventArgs e)
         {
+            // グローバル未処理例外ハンドラーの登録（クラッシュ保護とログ出力）
+            RegisterGlobalExceptionHandlers();
+
             // 自己更新(リネーム方式)で残った旧実行ファイル XColumn.exe.old を削除
             CleanupOldExecutable();
 
-            // DIコンテナの構築（既存処理より前に行う）
+            // 拡張機能フォルダの自動移行（バグ#7対策）
+            ChromeExtensionImporter.MigrateLegacyExtensionsFolder();
+
+            // DIコンテナの構築
             Services = ConfigureServices();
 
             // 言語設定の適用（UI表示前に行う）
@@ -53,11 +62,8 @@ namespace XColumn
 
             // プロファイル指定用変数
             string? targetProfile = null;
-            // DevToolsおよびGPU設定用変数
             bool enableDevTools = false;
             bool disableGpu = false;
-
-            // 再起動時に終了を待つ旧プロセスのPID
             int waitPid = 0;
 
             // コマンドライン引数の解析
@@ -66,32 +72,27 @@ namespace XColumn
                 if (e.Args[i] == "--profile" && i + 1 < e.Args.Length)
                 {
                     targetProfile = e.Args[i + 1];
-                    i++; // 値をスキップ（breakすると後続の引数が読めないため）
+                    i++;
                 }
-                // 再起動時: 旧プロセスの終了待ちオプション
                 else if (e.Args[i] == "--wait-pid" && i + 1 < e.Args.Length)
                 {
                     int.TryParse(e.Args[i + 1], out waitPid);
                     i++;
                 }
-                // DevTools有効化オプション
                 else if (e.Args[i] == "--enable-devtools")
                 {
                     enableDevTools = true;
                 }
-                // GPU無効化オプション
                 else if (e.Args[i] == "--disable-gpu")
                 {
                     disableGpu = true;
                 }
             }
 
-            // 再起動時は旧プロセスの終了を待つ。
-            // 旧プロセスのWebView2ブラウザプロセスが生きたまま新環境を
-            // 異なるオプションで作成すると 0x8007139F で初期化に失敗するため。
+            // 再起動時は旧プロセスの終了を待機（0x8007139F クラッシュ防止）
             if (waitPid > 0) WaitForPreviousInstanceExit(waitPid);
 
-            // 引数でプロファイルが指定されておらず、設定でデフォルトプロファイルが指定されている場合
+            // デフォルト起動プロファイルの読み込み
             if (string.IsNullOrEmpty(targetProfile))
             {
                 string appConfigPath = Path.Combine(_userDataFolder, "app_config.json");
@@ -116,26 +117,96 @@ namespace XColumn
         }
 
         /// <summary>
-        /// サービスとViewModelをDIコンテナに登録します。
-        /// 手順が進むごとにここへ追加していきます。
+        /// 全サービスとViewModelをDIコンテナに登録します。
         /// </summary>
         private static IServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
 
-            // --- Services ---
+            // --- Core Services ---
             services.AddSingleton<ISettingsService, SettingsService>();
             services.AddSingleton<IProfileService, ProfileService>();
             services.AddSingleton<IDialogService, DialogService>();
+            services.AddSingleton<IAppTimerService, AppTimerService>();
+            services.AddSingleton<IRateLimitService, RateLimitService>();
+            services.AddSingleton<IAudioService, AudioService>();
+            services.AddSingleton<IUpdateService, UpdateService>();
+            services.AddSingleton<IStatusService, StatusService>();
+            services.AddSingleton<IWebViewEnvironmentService, WebViewEnvironmentService>();
+            services.AddSingleton<IScriptInjectionService, ScriptInjectionService>();
 
             // --- ViewModels ---
             services.AddTransient<MainWindowViewModel>();
-
-            // 手順が進んだら登録予定:
-            // services.AddSingleton<IStatusService, StatusService>();
-            // services.AddSingleton<IUpdateService, UpdateService>();
+            services.AddTransient<SettingsViewModel>();
 
             return services.BuildServiceProvider();
+        }
+
+        /// <summary>
+        /// グローバル例外ハンドラーを登録し、予期せぬクラッシュの抑止とログ保存を行います。
+        /// </summary>
+        private void RegisterGlobalExceptionHandlers()
+        {
+            // UIスレッドの未処理例外
+            DispatcherUnhandledException += (s, args) =>
+            {
+                LogCrash("DispatcherUnhandledException", args.Exception);
+                string msg = XColumn.Properties.Resources.ResourceManager.GetString("Err_UnhandledException") 
+                    ?? "予期せぬエラーが発生しました。\nログを保存しました。";
+                MessageBox.Show($"{msg}\n\n{args.Exception.Message}", "XColumn Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                args.Handled = true; // プロセス強制終了を阻止
+            };
+
+            // バックグラウンドスレッドの未処理例外
+            AppDomain.CurrentDomain.UnhandledException += (s, args) =>
+            {
+                if (args.ExceptionObject is Exception ex)
+                {
+                    LogCrash("AppDomainUnhandledException", ex);
+                }
+            };
+
+            // 非監視 Task の例外
+            TaskScheduler.UnobservedTaskException += (s, args) =>
+            {
+                LogCrash("UnobservedTaskException", args.Exception);
+                args.SetObserved();
+            };
+        }
+
+        /// <summary>
+        /// クラッシュログを %AppData%\XColumn\Logs\ に出力します。
+        /// </summary>
+        private void LogCrash(string source, Exception ex)
+        {
+            try
+            {
+                string logDir = Path.Combine(_userDataFolder, "Logs");
+                Directory.CreateDirectory(logDir);
+                string filename = $"crash_{DateTime.Now:yyyyMMdd_HHmmss}_{source}.log";
+                string fullPath = Path.Combine(logDir, filename);
+
+                string content = $"=== XColumn Crash Log ===\n" +
+                                 $"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n" +
+                                 $"Source: {source}\n" +
+                                 $"OS: {Environment.OSVersion}\n" +
+                                 $"Process Architecture: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}\n" +
+                                 $"Exception Type: {ex.GetType().FullName}\n" +
+                                 $"Message: {ex.Message}\n" +
+                                 $"StackTrace:\n{ex.StackTrace}\n";
+
+                if (ex.InnerException != null)
+                {
+                    content += $"\n--- Inner Exception ---\n" +
+                               $"Type: {ex.InnerException.GetType().FullName}\n" +
+                               $"Message: {ex.InnerException.Message}\n" +
+                               $"StackTrace:\n{ex.InnerException.StackTrace}\n";
+                }
+
+                File.WriteAllText(fullPath, content);
+                Logger.Log($"Crash log saved: {fullPath}");
+            }
+            catch { }
         }
 
         /// <summary>
@@ -143,8 +214,7 @@ namespace XColumn
         /// </summary>
         private void ApplyLanguageSettings()
         {
-            string userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
-            string appConfigPath = Path.Combine(userDataFolder, "app_config.json");
+            string appConfigPath = Path.Combine(_userDataFolder, "app_config.json");
             string language = "ja-JP"; // デフォルト
 
             if (File.Exists(appConfigPath))
@@ -171,8 +241,7 @@ namespace XColumn
         }
 
         /// <summary>
-        /// 再起動前に予約されたプロファイル複製処理（フォルダコピー）を実行します。
-        /// 実体の処理は IProfileService に委譲し、失敗時のみエラーダイアログを表示します。
+        /// 再起動前に予約されたプロファイル複製処理を実行します。
         /// </summary>
         private void ProcessPendingProfileClone()
         {
@@ -189,8 +258,6 @@ namespace XColumn
 
         /// <summary>
         /// 自己更新(リネーム方式)で退避した旧実行ファイル "XColumn.exe.old" を削除します。
-        /// 新プロセス起動直後は旧プロセスがまだ終了しておらず(WebView2後始末で数秒かかる).oldが
-        /// ロックされているため、起動をブロックせずバックグラウンドでロック解放を待って削除します。
         /// </summary>
         private void CleanupOldExecutable()
         {
@@ -200,7 +267,6 @@ namespace XColumn
 
             string oldExe = exe + ".old";
 
-            // 起動をブロックしないようバックグラウンドで実行（最大 ~30秒: 500ms × 60回）
             Task.Run(() =>
             {
                 for (int i = 0; i < 60; i++)
@@ -214,7 +280,7 @@ namespace XColumn
                     }
                     catch
                     {
-                        Thread.Sleep(500); // 旧プロセス終了→ロック解放まで待つ
+                        Thread.Sleep(500);
                     }
                 }
                 Logger.Log("Self-update: old executable still locked; will retry on next launch.");
@@ -223,9 +289,7 @@ namespace XColumn
 
         /// <summary>
         /// 再起動元の旧プロセスの終了を待機します（最大10秒）。
-        /// 終了後もWebView2ブラウザプロセスの後片付けが残るため、少しだけ猶予を置きます。
         /// </summary>
-        /// <param name="pid">待機対象の旧プロセスID。</param>
         private static void WaitForPreviousInstanceExit(int pid)
         {
             try
@@ -233,13 +297,9 @@ namespace XColumn
                 using var prev = System.Diagnostics.Process.GetProcessById(pid);
                 prev.WaitForExit(10000);
             }
-            catch
-            {
-                // 既に終了している（GetProcessByIdが例外を投げる）場合は待機不要
-            }
+            catch { }
 
-            // WebView2ブラウザプロセス(msedgewebview2.exe)終了の猶予
-            System.Threading.Thread.Sleep(500);
+            Thread.Sleep(500);
         }
     }
 }

@@ -1076,4 +1076,25 @@ Columns keep running during the limit (use at your own risk).</value>
   <data name="Ctx_GoBack" xml:space="preserve">
     <value>Back</value>
   </data>
+  <data name="Menu_ClearCache" xml:space="preserve">
+    <value>Clear Cache...</value>
+  </data>
+  <data name="Msg_ConfirmClearCache" xml:space="preserve">
+    <value>Clear temporary browser cache?&#10;(Login sessions will be preserved)</value>
+  </data>
+  <data name="Msg_ClearCacheSuccess" xml:space="preserve">
+    <value>Cache successfully cleared.</value>
+  </data>
+  <data name="Msg_ClearCacheFailed" xml:space="preserve">
+    <value>Failed to clear cache or some files are currently in use.</value>
+  </data>
+  <data name="Err_UnhandledException" xml:space="preserve">
+    <value>An unexpected error occurred.&#10;Crash log has been saved.</value>
+  </data>
+  <data name="Msg_WebViewRecovered" xml:space="preserve">
+    <value>Column has been automatically recovered from a crash.</value>
+  </data>
+  <data name="RL429_Estimating" xml:space="preserve">
+    <value>Estimating...</value>
+  </data>
 </root>

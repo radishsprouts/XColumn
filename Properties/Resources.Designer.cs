@@ -2841,5 +2841,68 @@ namespace XColumn.Properties {
                 return ResourceManager.GetString("UserId", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   キャッシュのクリア... に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Menu_ClearCache {
+            get {
+                return ResourceManager.GetString("Menu_ClearCache", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   ブラウザの一時キャッシュを削除しますか？ に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Msg_ConfirmClearCache {
+            get {
+                return ResourceManager.GetString("Msg_ConfirmClearCache", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   キャッシュを正常に削除しました。 に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Msg_ClearCacheSuccess {
+            get {
+                return ResourceManager.GetString("Msg_ClearCacheSuccess", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   キャッシュの削除に失敗したか、一部ファイルが使用中です。 に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Msg_ClearCacheFailed {
+            get {
+                return ResourceManager.GetString("Msg_ClearCacheFailed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   予期せぬエラーが発生しました。 に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Err_UnhandledException {
+            get {
+                return ResourceManager.GetString("Err_UnhandledException", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   カラムがクラッシュから自動復旧しました。 に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string Msg_WebViewRecovered {
+            get {
+                return ResourceManager.GetString("Msg_WebViewRecovered", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   計算中... に類似しているローカライズされた文字列を検索します。
+        /// </summary>
+        public static string RL429_Estimating {
+            get {
+                return ResourceManager.GetString("RL429_Estimating", resourceCulture);
+            }
+        }
     }
 }

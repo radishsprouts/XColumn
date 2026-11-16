@@ -1075,4 +1075,25 @@ X のAPI制限(429)に陥りにくくなるかもしれません。</value>
   <data name="Ctx_GoBack" xml:space="preserve">
     <value>戻る</value>
   </data>
+  <data name="Menu_ClearCache" xml:space="preserve">
+    <value>キャッシュのクリア...</value>
+  </data>
+  <data name="Msg_ConfirmClearCache" xml:space="preserve">
+    <value>ブラウザの一時キャッシュを削除しますか？&#10;（ログイン情報は維持されます）</value>
+  </data>
+  <data name="Msg_ClearCacheSuccess" xml:space="preserve">
+    <value>キャッシュを正常に削除しました。</value>
+  </data>
+  <data name="Msg_ClearCacheFailed" xml:space="preserve">
+    <value>キャッシュの削除に失敗したか、一部ファイルが使用中です。</value>
+  </data>
+  <data name="Err_UnhandledException" xml:space="preserve">
+    <value>予期せぬエラーが発生しました。&#10;ログを保存しました。</value>
+  </data>
+  <data name="Msg_WebViewRecovered" xml:space="preserve">
+    <value>カラムがクラッシュから自動復旧しました。</value>
+  </data>
+  <data name="RL429_Estimating" xml:space="preserve">
+    <value>計算中...</value>
+  </data>
 </root>

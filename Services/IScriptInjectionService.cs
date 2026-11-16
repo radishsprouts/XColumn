@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using XColumn.Models;
+using XColumn.ViewModels;
 
 namespace XColumn.Services
 {
@@ -11,6 +12,9 @@ namespace XColumn.Services
     {
         /// <summary>カスタムCSSおよびレイアウトCSSをWebViewへ注入します。</summary>
         Task ApplyCustomCssAsync(CoreWebView2 webView, string url, bool isRetweetHidden, bool isReplyHidden, int mediaScalePercentage, AppSettings settings);
+
+        /// <summary>ColumnViewModel からカスタムCSSをWebViewへ注入します。</summary>
+        Task ApplyCustomCssAsync(CoreWebView2 webView, string url, ColumnViewModel? column, AppSettings settings);
 
         /// <summary>NGワード判定スクリプトを注入します（二重Observer防止ガード付き）。</summary>
         Task ApplyNgWordsAsync(CoreWebView2 webView, IEnumerable<string> ngWords);
@@ -32,5 +36,14 @@ namespace XColumn.Services
 
         /// <summary>動画の自動再生無効化スクリプトを注入します。</summary>
         Task ApplyDisableVideoAutoplayAsync(CoreWebView2 webView);
+
+        /// <summary>YouTubeリンクのクリック制御スクリプトを注入します。</summary>
+        Task ApplyYouTubeClickScriptAsync(CoreWebView2 webView);
+
+        /// <summary>トレンドクリック制御スクリプトを注入します。</summary>
+        Task ApplyTrendingClickScriptAsync(CoreWebView2 webView);
+
+        /// <summary>音量制御スクリプトを注入します。</summary>
+        Task ApplyVolumeAsync(CoreWebView2 webView, double volume);
     }
 }
