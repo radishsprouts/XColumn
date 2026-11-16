@@ -38,10 +38,12 @@ namespace XColumn.Services
         /// <summary>
         /// 各種パスを解決し、必要なフォルダを作成します。
         /// </summary>
-        public SettingsService()
+        /// <param name="customUserDataFolder">テスト時などに指定するカスタムユーザーデータフォルダ（省略時は %AppData%\XColumn）。</param>
+        public SettingsService(string? customUserDataFolder = null)
         {
-            UserDataFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
+            UserDataFolder = !string.IsNullOrEmpty(customUserDataFolder)
+                ? customUserDataFolder
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XColumn");
             ProfilesFolder = Path.Combine(UserDataFolder, "Profiles");
             AppConfigPath = Path.Combine(UserDataFolder, "app_config.json");
 

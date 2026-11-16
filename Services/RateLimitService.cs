@@ -73,6 +73,7 @@ namespace XColumn.Services
         public string ClassifyOperation(string? url)
         {
             url ??= "";
+            if (!url.Contains("x.com") && !url.Contains("twitter.com")) return "Other";
             if (url.Contains("/search")) return "SearchTimeline";
             if (url.Contains("/lists/") || url.Contains("/i/lists/")) return "ListLatestTweetsTimeline";
             if (url.Contains("/notifications")) return "NotificationsTimeline";

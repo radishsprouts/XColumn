@@ -58,4 +58,10 @@
 	  </None>
 	</ItemGroup>
 
+	<ItemGroup>
+		<Compile Remove="XColumn.Tests\**" />
+		<EmbeddedResource Remove="XColumn.Tests\**" />
+		<None Remove="XColumn.Tests\**" />
+	</ItemGroup>
+
 </Project>
