@@ -89,13 +89,24 @@ namespace XColumn.Views
                         FocusWebView.CoreWebView2.NavigationStarting += (s, e) =>
                         {
                             string url = e.Uri;
-                            if (url.StartsWith("chrome-extension://")) return;
+                            if (string.IsNullOrEmpty(url) || url == "about:blank" || url.StartsWith("data:") || url.StartsWith("blob:")) return;
+                            if (url.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase)) return;
 
-                            if (!IsAllowedDomain(url, focus: true))
+                            // 特殊プロトコル（twitter:// 等）は外部アプリを起動せず単にブロック
+                            if (!IsValidHttpUrl(url))
                             {
                                 e.Cancel = true;
-                                OpenExternalLinkByMode(url);
+                                return;
                             }
+
+                            // X/Twitter 関連ドメイン（pbs.twimg.com含む）はフォーカスビュー内でそのまま許可
+                            if (IsAllowedDomain(url, focus: true)) return;
+
+                            // YouTube URL もフォーカスビュー内でそのまま許可
+                            if (IsYouTubeUrl(url)) return;
+
+                            e.Cancel = true;
+                            OpenExternalLinkByMode(url);
                         };
 
                         FocusWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
@@ -429,7 +440,16 @@ namespace XColumn.Views
             webView.CoreWebView2.NavigationStarting += (s, e) =>
             {
                 string url = e.Uri;
+                if (string.IsNullOrEmpty(url) || url == "about:blank" || url.StartsWith("data:") || url.StartsWith("blob:")) return;
+                if (url.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase)) return;
                 if (col.IsExternalSite) return;
+
+                // 特殊プロトコル（twitter:// 等）は外部アプリを起動せず単にブロック
+                if (!IsValidHttpUrl(url))
+                {
+                    e.Cancel = true;
+                    return;
+                }
 
                 if (!IsAllowedDomain(url))
                 {
@@ -684,19 +704,41 @@ namespace XColumn.Views
 
         private void OpenExternalLinkByMode(string url)
         {
-            switch (_currentSettings.ExternalLinkOpenMode)
+            if (string.IsNullOrWhiteSpace(url) || !IsValidHttpUrl(url)) return;
+
+            // X/Twitterドメインのリンクを誤って外部ブラウザで起動しないように保護
+            if (IsAllowedDomain(url, true) || IsAllowedDomain(url, false))
             {
-                case "Focus":
-                    EnterFocusMode(url);
-                    break;
-                case "Pip":
-                    var pip = new PipWindow(url, _settingsService.UserDataFolder) { Owner = this };
-                    pip.Show();
-                    break;
-                default:
-                    Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-                    break;
+                EnterFocusMode(url);
+                return;
             }
+
+            try
+            {
+                switch (_currentSettings.ExternalLinkOpenMode)
+                {
+                    case "Focus":
+                        EnterFocusMode(url);
+                        break;
+                    case "Pip":
+                        var pip = new PipWindow(url, _settingsService.UserDataFolder) { Owner = this };
+                        pip.Show();
+                        break;
+                    default:
+                        Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to open external link: {url}, error: {ex.Message}");
+            }
+        }
+
+        private static bool IsValidHttpUrl(string url)
+        {
+            return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
         }
 
         private static bool IsAllowedDomain(string url, bool focus = false)
@@ -728,7 +770,32 @@ namespace XColumn.Views
         private void CoreWebView2_NewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
         {
             e.Handled = true;
-            OpenExternalLinkByMode(e.Uri);
+            string uri = e.Uri;
+            if (string.IsNullOrWhiteSpace(uri) || uri == "about:blank" || uri.StartsWith("data:") || uri.StartsWith("blob:")) return;
+
+            // 特殊プロトコル（twitter:// 等）は外部アプリを起動しない
+            if (!IsValidHttpUrl(uri)) return;
+
+            // pbs.twimg.com の画像
+            bool isTwimgImage = uri.StartsWith("https://pbs.twimg.com/", StringComparison.OrdinalIgnoreCase);
+            if (!e.IsUserInitiated && !(_currentSettings.DisablePopupBlocking && isTwimgImage)) return;
+
+            // 拡張機能画面はアプリ内フォーカスモード
+            if (uri.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase))
+            {
+                Dispatcher.InvokeAsync(() => EnterFocusMode(uri));
+                return;
+            }
+
+            // X/Twitterドメイン内のリンク・画像は外部ブラウザで開かず、アプリ内でフォーカス表示
+            if (IsAllowedDomain(uri, true) || IsAllowedDomain(uri, false))
+            {
+                Dispatcher.InvokeAsync(() => EnterFocusMode(uri));
+                return;
+            }
+
+            // 正常な http/https 外部リンクのみを開く
+            OpenExternalLinkByMode(uri);
         }
 
         private void CoreWebView2_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
