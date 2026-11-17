@@ -852,19 +852,39 @@ namespace XColumn.Views
 
         private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
         {
-            string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
-            var result = await _updateService.CheckForUpdatesAsync(version, _currentSettings.SkippedVersion);
-            if (result.HasUpdate)
+            try
             {
-                string msg = string.Format(R.Msg_UpdateAvailable, result.RemoteVersion);
-                if (_dialogService.ShowMessage(msg, R.Settings_UpdateCheck, MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                string version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
+                var result = await _updateService.CheckForUpdatesAsync(version, _currentSettings.SkippedVersion);
+                if (result.HasUpdate)
                 {
-                    await _updateService.ApplyUpdateAsync(result, _activeProfileName);
+                    string releaseNotes = string.IsNullOrWhiteSpace(result.ReleaseNotes) ? "" : result.ReleaseNotes;
+                    string msg = string.Format(R.Msg_UpdateAvailable, "v" + result.RemoteVersion, releaseNotes);
+                    
+                    var choice = _dialogService.ShowMessage(msg, R.Settings_UpdateCheck, MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (choice == MessageBoxResult.Yes)
+                    {
+                        if (!string.IsNullOrEmpty(result.AssetDownloadUrl))
+                        {
+                            await _updateService.ApplyUpdateAsync(result, _activeProfileName);
+                        }
+                        else if (!string.IsNullOrEmpty(result.ReleaseUrl))
+                        {
+                            Process.Start(new ProcessStartInfo(result.ReleaseUrl) { UseShellExecute = true });
+                        }
+                    }
+                }
+                else
+                {
+                    string msg = string.Format(R.Update_UpToDate, version);
+                    _dialogService.ShowMessage(msg, R.Settings_UpdateCheck, MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
-            else
+            catch (Exception ex)
             {
-                _dialogService.ShowMessage(R.Update_UpToDate, R.Settings_UpdateCheck, MessageBoxButton.OK, MessageBoxImage.Information);
+                Logger.Log($"[MainWindow] Update check failed: {ex.Message}");
+                string errorMsg = string.Format(R.Update_CheckFailed, ex.Message);
+                _dialogService.ShowMessage(errorMsg, R.Title_Error, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -876,14 +896,27 @@ namespace XColumn.Views
                 var result = await _updateService.CheckForUpdatesAsync(version, _currentSettings.SkippedVersion);
                 if (result.HasUpdate)
                 {
-                    string msg = string.Format(R.Msg_UpdateAvailable, result.RemoteVersion);
-                    if (_dialogService.ShowMessage(msg, R.Settings_UpdateCheck, MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+                    string releaseNotes = string.IsNullOrWhiteSpace(result.ReleaseNotes) ? "" : result.ReleaseNotes;
+                    string msg = string.Format(R.Msg_UpdateAvailable, "v" + result.RemoteVersion, releaseNotes);
+                    
+                    var choice = _dialogService.ShowMessage(msg, R.Settings_UpdateCheck, MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (choice == MessageBoxResult.Yes)
                     {
-                        await _updateService.ApplyUpdateAsync(result, _activeProfileName);
+                        if (!string.IsNullOrEmpty(result.AssetDownloadUrl))
+                        {
+                            await _updateService.ApplyUpdateAsync(result, _activeProfileName);
+                        }
+                        else if (!string.IsNullOrEmpty(result.ReleaseUrl))
+                        {
+                            Process.Start(new ProcessStartInfo(result.ReleaseUrl) { UseShellExecute = true });
+                        }
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.Log($"[MainWindow] Silent update check failed: {ex.Message}");
+            }
         }
 
         private void CheckRateLimit429_Click(object sender, RoutedEventArgs e)
